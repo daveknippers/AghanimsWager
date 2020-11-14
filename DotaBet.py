@@ -124,6 +124,7 @@ class PGDB:
 			return True,now
 
 	def set_winner(self,discord_id,winning_side):
+		raise NotImplemented
 		ml = self.match_ledger
 		s = db.select([ml.c.discord_id,ml.c.winning_side,ml.c.creation_time])\
 			.where(db.and_(	self.match_ledger.c.discord_id == discord_id, 
