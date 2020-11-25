@@ -30,6 +30,7 @@ async def on_message(message):
 			msg = '{0.author.mention}, you have {1} {2}'.format(message,amount,currency)
 		await message.channel.send(msg)
 
+	'''
 	if message.content.startswith('!start-match'):
 		try:
 			command,side = message.content.lower().split()
@@ -58,8 +59,7 @@ async def on_message(message):
 		if fail or (side != 'radiant' and side != 'dire'):
 			msg = '{0.author.mention}, the proper syntax is !start-match radiant/dire'.format(message)
 			await message.channel.send(msg)
-
-
+	'''
 	'''
 	if message.content.startswith('!bet'):
 		try:
@@ -72,6 +72,7 @@ async def on_message(message):
 @client.event
 async def on_ready():
 	print('Logged in as',client.user.name,client.user.id)
+
 
 class PGDB:
 
