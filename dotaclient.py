@@ -6,6 +6,7 @@ logging.basicConfig(format='[%(asctime)s] %(levelname)s %(name)s: %(message)s', 
 import gevent
 
 import sqlalchemy as db
+from sqlalchemy import exc
 
 from steam.client import SteamClient
 from steam.enums import EPersonaState, EResult
@@ -16,10 +17,11 @@ from dota2.proto_enums import EDOTAGCMsg
 
 from tokens import STEAM_BOT_ACCOUNT, STEAM_BOT_PASSWORD, CONNECTION_STRING
 
+from pgdb import PGDB
+
 client = SteamClient()
 dota = Dota2Client(client)
 
-steam_id = 76561199107038141
 SLEEPY_TIME = 10
 
 source_tv_lobbies = set()
@@ -34,7 +36,7 @@ def add_rp_hero(lobby_id,steam_id,rich_presence):
 			param2 = rich_presence['param2']
 
 		except KeyError:
-			logging.warn('could not parse rich presence for param[0,1,2] in lobby_id {} steam_id {}'.format(lobby_id,steam_id))
+			logging.warning('could not parse rich presence for param[0,1,2] in lobby_id {} steam_id {}'.format(lobby_id,steam_id))
 		else:
 			row = {}
 			row['lobby_id'] = lobby_id
@@ -44,83 +46,9 @@ def add_rp_hero(lobby_id,steam_id,rich_presence):
 			row['param2'] = param2
 			rp_heroes_processed.add((lobby_id,steam_id))
 			if not pgdb.insert_rp(row):
-				logging.warn('rp status already in database for lobby_id {} steam_id {}'.format(lobby_id,steam_id))
-
-class PGDB:
-
-	def __init__(self,conn_string):
-		self.engine = db.create_engine(conn_string)
-		self.conn = self.engine.connect()
-		self.metadata = db.MetaData(schema='Kali')
-
-		self.live_matches = db.Table('live_matches', self.metadata,
-			db.Column('query_time',db.BigInteger,nullable=False),
-			db.Column('activate_time',db.BigInteger,nullable=False),
-			db.Column('deactivate_time',db.BigInteger,nullable=False),
-			db.Column('server_steam_id',db.BigInteger,nullable=False),
-			db.Column('lobby_id',db.BigInteger,nullable=False),
-			db.Column('league_id',db.Integer,nullable=False),
-			db.Column('lobby_type',db.Integer,nullable=False),
-			db.Column('game_time',db.Integer,nullable=False),
-			db.Column('delay',db.Integer,nullable=False),
-			db.Column('spectators',db.Integer,nullable=False),
-			db.Column('game_mode',db.Integer,nullable=False),
-			db.Column('average_mmr',db.Integer,nullable=False),
-			db.Column('match_id',db.BigInteger,nullable=False),
-			db.Column('series_id',db.Integer,nullable=False),
-			db.Column('sort_score',db.Integer,nullable=False),
-			db.Column('last_update_time',db.Float,nullable=False),
-			db.Column('radiant_lead',db.Integer,nullable=False),
-			db.Column('radiant_score',db.Integer,nullable=False),
-			db.Column('dire_score',db.Integer,nullable=False),
-			db.Column('building_state',db.Integer,nullable=False))
-
-		self.live_players = db.Table('live_players', self.metadata,
-			db.Column('match_id',db.BigInteger,nullable=False),
-			db.Column('player_num',db.Integer,nullable=False),
-			db.Column('account_id',db.BigInteger,nullable=False),
-			db.Column('hero_id',db.Integer,nullable=False))
-
-		self.rp_heroes = db.Table('rp_heroes', self.metadata,
-			db.Column('lobby_id',db.BigInteger,nullable=False,primary_key=True),
-			db.Column('steam_id',db.BigInteger,nullable=False,primary_key=True),
-			db.Column('param0',db.String,nullable=True,primary_key=True),
-			db.Column('param1',db.String,nullable=True,primary_key=True),
-			db.Column('param2',db.String,nullable=True))
-
-		self.metadata.create_all(self.engine)
-
-	def insert_lm(self,row):
-		lm = self.live_matches
-		insert = lm.insert().values(**row)
-		result = self.conn.execute(insert)
-	
-	def insert_lp(self,players):
-		lp = self.live_players
-		insert = lp.insert().values(players)
-		result = self.conn.execute(insert)
-
-	def check_lp(self,match_id):
-		lp = self.live_players
-		s = db.select([lp]).where(lp.c.match_id == match_id)
-		result = self.conn.execute(s).fetchall()
-		if len(result) == 0:
-			return False
-		elif len(result != 10):
-			logging.warn('Unexpected number of players in match_id {}'.format(match_id))
-		return True
-
-	def insert_rp(self,row):
-		rp = self.rp_heroes
-		s = db.select([rp]).where(db.and_(rp.c.lobby_id == row['lobby_id'],
-										  rp.c.steam_id == row['steam_id']))
-		if (result := self.conn.execute(s).fetchone()):
-			return False
-		else:
-			insert = rp.insert().values(**row)
-			result = self.conn.execute(insert)
-			return True
-			
+				msg = 'rp status already in database for lobby_id {} steam_id {}.'.format(lobby_id,steam_id)
+				msg = msg+' this is normal if restarting bot in middle of live games.'
+				logging.warning(msg)
 
 @client.on(EMsg.ClientPersonaState)
 def investigate_ClientPersonaState(msg):
@@ -180,26 +108,32 @@ def start_dota():
 @dota.on('ready')
 def lobby_loop():
 	logging.info('Dota GC communications prepared')
+	current_live_lobbies = set()
 	while True:
 		gevent.sleep(SLEEPY_TIME)
 		logging.info('Checking lobbies...')
 		check_time = datetime.datetime.now()
 		n_lobbies = len(source_tv_lobbies)
 		if n_lobbies > 0:
+			if current_live_lobbies != source_tv_lobbies:
+				pgdb.replace_live(source_tv_lobbies)
+				current_live_lobbies = source_tv_lobbies.copy()
 			data = dict([('lobby_ids',list(source_tv_lobbies))])
 			logging.info('Checking {} lobbies'.format(n_lobbies))
 			dota.send(EDOTAGCMsg.EMsgClientToGCFindTopSourceTVGames,data)
+		elif n_lobbies == 0:
+			current_live_lobbies = set()
+			pgdb.replace_live(source_tv_lobbies)
 		else:
 			logging.info('No lobbies found')
 
 @client.on('disconnect')
 def handle_disconnect():
-	logging.warn('Steam disconnected')
+	logging.warning('Steam disconnected')
 	if client.relogin_available:
 		client.reconnect
 
 pgdb = PGDB(CONNECTION_STRING)
-
 
 with open('heroes.json') as f:
 	hero_data = json.load(f)
