@@ -37,13 +37,18 @@ Building State: {building_state}'''
 		#self.update_announce(self)
 				
 	async def announce(self):
-		live_df = pd.read_sql_query(pgdb.select_lm(self.lobby_id,query_only=True),con=pgdb.conn)
+		live_df = pd.read_sql_query(pgdb.select_lm(self.lobby_id,self.last_update,query_only=True),con=pgdb.conn)
+		if len(live_df) == 0:
+			return
+		start_last_update = self.last_update
 		last_update_df = live_df[live_df['query_time'] == live_df['query_time'].max()]
 		self.match_details = list(last_update_df.to_dict().items())
 		self.match_details = dict(map(lambda x: (x[0],next(iter(x[1].values()))),self.match_details))
 		self.last_update = self.match_details['last_update_time']
+		print('updating {} to {}'.format(start_last_update,self.last_update))
 		m = Lobby.msg_template.format(**self.match_details)
 		if self.message_id:
+			print('editing message {}'.format(self.message_id))
 			await self.match_message.edit(content=m)
 		else:
 			if (message_id := pgdb.select_message(self.lobby_id)):
@@ -55,7 +60,7 @@ Building State: {building_state}'''
 			else:
 				self.match_message = await self.channel.send(m)
 				self.message_id = self.match_message.id
-				print('making new old message_id {}'.format(self.message_id))
+				print('making new message_id {}'.format(self.message_id))
 				pgdb.insert_message(self.lobby_id,self.message_id)
 			
 class DotaBet(commands.Bot):
