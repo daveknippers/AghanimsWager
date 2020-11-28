@@ -119,6 +119,7 @@ def start_dota():
 def lobby_loop():
 	logging.info('Dota GC communications prepared')
 	current_live_lobbies = set()
+	pgdb.replace_live(current_live_lobbies)
 	while True:
 		gevent.sleep(SLEEPY_TIME)
 		logging.warning('Checking lobbies...')
@@ -133,7 +134,7 @@ def lobby_loop():
 			data = dict([('lobby_ids',list(source_tv_lobbies))])
 			logging.info('Checking {} lobbies'.format(n_lobbies))
 			dota.send(EDOTAGCMsg.EMsgClientToGCFindTopSourceTVGames,data)
-		elif n_lobbies == 0:
+		elif n_lobbies == 0 and len(current_live_lobbies) != 0:
 			current_live_lobbies = set()
 			pgdb.replace_live(source_tv_lobbies)
 

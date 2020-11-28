@@ -94,7 +94,10 @@ class DotaBet(commands.Bot):
 		while True:
 			await asyncio.sleep(5)
 
-			for live_lobby_id in map(lambda x: x[0],pgdb.get_live()):
+			live_lobbies = pgdb.get_live()
+			live_lobbies = list(map(lambda x: x[0],live_lobbies))
+
+			for live_lobby_id in live_lobbies:
 				print('lobby found: {}'.format(live_lobby_id))
 				
 				if live_lobby_id in self.live_lobbies.keys():
