@@ -1,5 +1,5 @@
 
-import asyncio
+import asyncio, json
 import datetime as dt
 
 import discord
@@ -17,12 +17,55 @@ from pgdb import PGDB
 
 pgdb = PGDB(CONNECTION_STRING)
 
-last_time = set()
+class Lobby:
 
+	msg_template = '''Live game: {match_id}
+Last Update Time: {last_update_time}
+Average MMR: {average_mmr}
+Radiant Lead: {radiant_lead}
+Radiant Score: {radiant_score}
+Dire Score: {dire_score}
+Building State: {building_state}'''
+	
+	def __init__(self,lobby_id,channel):
+		self.lobby_id = lobby_id
+		self.channel = channel
+		self.last_update = None
+		self.match_details = None
+		self.message_id = None
+
+		#self.update_announce(self)
+				
+	async def announce(self):
+		live_df = pd.read_sql_query(pgdb.select_lm(self.lobby_id,query_only=True),con=pgdb.conn)
+		last_update_df = live_df[live_df['query_time'] == live_df['query_time'].max()]
+		self.match_details = list(last_update_df.to_dict().items())
+		self.match_details = dict(map(lambda x: (x[0],next(iter(x[1].values()))),self.match_details))
+		self.last_update = self.match_details['last_update_time']
+		m = Lobby.msg_template.format(**self.match_details)
+		if self.message_id:
+			await self.match_message.edit(content=m)
+		else:
+			if (message_id := pgdb.select_message(self.lobby_id)):
+				self.message_id = message_id[0]
+				self.match_message = await self.channel.fetch_message(self.message_id)
+			if self.message_id:
+				print('using old message_id {}'.format(self.message_id))
+				await self.match_message.edit(content=m)
+			else:
+				self.match_message = await self.channel.send(m)
+				self.message_id = self.match_message.id
+				print('making new old message_id {}'.format(self.message_id))
+				pgdb.insert_message(self.lobby_id,self.message_id)
+			
 class DotaBet(commands.Bot):
 	def __init__(self, *args, **kwargs):
 		super().__init__(*args,**kwargs)
+		with open('heroes.json') as f:
+			hero_data = json.load(f)
+			self.hero_data = dict(map(lambda x: (x['name'],(x['id'],x['localized_name'])),hero_data['heroes']))
 	
+		self.live_lobbies = {}
 		self.bg_task = self.loop.create_task(self.check_games())
 
 	async def check_games(self):
@@ -34,23 +77,18 @@ class DotaBet(commands.Bot):
 	async def do_stuff(self):
 		channel = discord.utils.get(self.get_all_channels(), name='dota-bet')
 		while True:
-			await asyncio.sleep(3)
+			await asyncio.sleep(10)
 
-			for live in map(lambda x: x[0],pgdb.get_live()):
-				live_df = pd.read_sql_query(pgdb.select_lm(live,query_only=True),con=pgdb.conn)
-				last_update_df = live_df[live_df['query_time'] == live_df['query_time'].max()]
-				output_format = list(last_update_df.to_dict().items())
-				output_format = dict(map(lambda x: (x[0],next(iter(x[1].values()))),output_format))
-				if (live,output_format['last_update_time']) not in last_time:
-					msg = '''Live game: {match_id}
-Last Update Time: {last_update_time}
-Average MMR: {average_mmr}
-Radiant Lead: {radiant_lead}
-Radiant Score: {radiant_score}
-Dire Score: {dire_score}
-Building State: {building_state}'''.format(**output_format)
-					last_time.add((live,output_format['last_update_time']))
-					await channel.send(msg)
+			for live_lobby_id in map(lambda x: x[0],pgdb.get_live()):
+				
+				if live_lobby_id in self.live_lobbies.keys():
+					live_lobby = self.live_lobbies[live_lobby_id]
+				else:
+					live_lobby = Lobby(live_lobby_id,channel)
+					self.live_lobbies[live_lobby_id] = live_lobby
 
+				await live_lobby.announce()
+
+				
 bot = DotaBet(command_prefix='!', description='Kali Roulette')
 bot.run(TOKEN)

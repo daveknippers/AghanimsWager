@@ -1,6 +1,8 @@
 import logging, datetime, time, json
 from collections import defaultdict
 
+from enum import Enum, auto
+
 logging.basicConfig(format='[%(asctime)s] %(levelname)s %(name)s: %(message)s', level=logging.WARN)
 
 import gevent
@@ -17,7 +19,7 @@ from dota2.proto_enums import EDOTAGCMsg
 
 from tokens import STEAM_BOT_ACCOUNT, STEAM_BOT_PASSWORD, CONNECTION_STRING
 
-from pgdb import PGDB
+from pgdb import PGDB, LP_STATUS
 
 client = SteamClient()
 dota = Dota2Client(client)
@@ -25,7 +27,7 @@ dota = Dota2Client(client)
 SLEEPY_TIME = 10
 
 source_tv_lobbies = set()
-live_players_processed = defaultdict(lambda: False)
+live_players_processed = defaultdict(lambda: LP_STATUS.NOT_FOUND)
 rp_heroes_processed = set()
 
 def add_rp_hero(lobby_id,steam_id,rich_presence):
@@ -86,15 +88,20 @@ def process_lobby_states(msg):
 			players = game['players']
 			del game['players']
 			pgdb.insert_lm(game)
-			if not live_players_processed[match_id]:
-				if pgdb.check_lp(match_id):
-					live_players_processed[game['match_id']] = True
-				elif not any(map(lambda x: x == 0,map(lambda x: x['hero_id'],players))):
+			if live_players_processed[match_id] == LP_STATUS.NOT_FOUND:
+				live_players_processed[match_id] = pgdb.check_lp(match_id)
+			if live_players_processed[match_id] == LP_STATUS.NOT_FOUND:
+				for p,i in zip(players,range(len(players))):
+					p['match_id'] = match_id
+					p['player_num'] = i
+				live_players_processed[match_id] = pgdb.insert_lp(players)
+			elif live_players_processed[match_id] == LP_STATUS.INIT:
+				if not any(map(lambda x: x == 0,map(lambda x: x['hero_id'],players))):
+					pgdb.update_lp(players)
 					for p,i in zip(players,range(len(players))):
 						p['match_id'] = match_id
 						p['player_num'] = i
-					pgdb.insert_lp(players)
-					live_players_processed[game['match_id']] = True
+					live_players_processed[match_id] == pgdb.update_lp(match_id)
 	else:
 		logging.info('No specific lobbies returned')
 
@@ -121,7 +128,7 @@ def lobby_loop():
 			data = dict([('lobby_ids',list(source_tv_lobbies))])
 			logging.info('Checking {} lobbies'.format(n_lobbies))
 			dota.send(EDOTAGCMsg.EMsgClientToGCFindTopSourceTVGames,data)
-		elif n_lobbies == 0:
+		elif n_lobbies == 0 and len(current_live_lobbies) == 0:
 			current_live_lobbies = set()
 			pgdb.replace_live(source_tv_lobbies)
 		else:
@@ -135,9 +142,6 @@ def handle_disconnect():
 
 pgdb = PGDB(CONNECTION_STRING)
 
-with open('heroes.json') as f:
-	hero_data = json.load(f)
-	hero_data = dict(map(lambda x: (x['name'],(x['id'],x['localized_name'])),hero_data['heroes']))
 	
 result = client.cli_login(username=STEAM_BOT_ACCOUNT,password=STEAM_BOT_PASSWORD)
 if result != EResult.OK:
