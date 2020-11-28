@@ -55,6 +55,7 @@ def add_rp_hero(lobby_id,steam_id,rich_presence):
 @client.on(EMsg.ClientPersonaState)
 def investigate_ClientPersonaState(msg):
 	if client.friends.ready:
+		logging.warning('clearing source_tv_lobbies')
 		source_tv_lobbies.clear()
 		for f in client.friends:
 			if f.state != EPersonaState.Offline:
@@ -77,12 +78,15 @@ def investigate_ClientPersonaState(msg):
 
 @dota.on(EDOTAGCMsg.EMsgGCToClientFindTopSourceTVGamesResponse)
 def process_lobby_states(msg):
-	logging.info('Starting process_lobby_states')
+	logging.warning('Starting process_lobby_states')
 	query_time = int(time.mktime(datetime.datetime.now().timetuple()))
 	if msg.specific_games:	
-		logging.info('Specific lobbies returned')
+		logging.warning('Specific lobbies returned')
 		for g in msg.game_list:
 			game = proto_to_dict(g)
+			logging.warning('match_id: {}'.format(game['match_id']))
+			logging.warning('game_time: {}'.format(game['game_time']))
+			logging.warning('radiant_lead time: {}'.format(game['radiant_lead']))
 			match_id = game['match_id']
 			game['query_time'] = query_time
 			players = game['players']
@@ -97,17 +101,16 @@ def process_lobby_states(msg):
 				live_players_processed[match_id] = pgdb.insert_lp(players)
 			elif live_players_processed[match_id] == LP_STATUS.INIT:
 				if not any(map(lambda x: x == 0,map(lambda x: x['hero_id'],players))):
-					pgdb.update_lp(players)
 					for p,i in zip(players,range(len(players))):
 						p['match_id'] = match_id
 						p['player_num'] = i
-					live_players_processed[match_id] == pgdb.update_lp(match_id)
+					live_players_processed[match_id] = pgdb.update_lp(players)
 	else:
 		logging.info('No specific lobbies returned')
 
 @client.on('logged_on')
 def start_dota():
-	logging.info('Starting Dota GC communication')
+	logging.warning('Starting Dota GC communication')
 	dota.launch()
 
 #@dota.on('notready')
@@ -118,7 +121,9 @@ def lobby_loop():
 	current_live_lobbies = set()
 	while True:
 		gevent.sleep(SLEEPY_TIME)
-		logging.info('Checking lobbies...')
+		logging.warning('Checking lobbies...')
+		logging.warning('current_live_lobbies: {}'.format(current_live_lobbies))
+		logging.warning('source_tv_lobbies: {}'.format(source_tv_lobbies))
 		check_time = datetime.datetime.now()
 		n_lobbies = len(source_tv_lobbies)
 		if n_lobbies > 0:
@@ -128,11 +133,9 @@ def lobby_loop():
 			data = dict([('lobby_ids',list(source_tv_lobbies))])
 			logging.info('Checking {} lobbies'.format(n_lobbies))
 			dota.send(EDOTAGCMsg.EMsgClientToGCFindTopSourceTVGames,data)
-		elif n_lobbies == 0 and len(current_live_lobbies) == 0:
+		elif n_lobbies == 0:
 			current_live_lobbies = set()
 			pgdb.replace_live(source_tv_lobbies)
-		else:
-			logging.info('No lobbies found')
 
 @client.on('disconnect')
 def handle_disconnect():

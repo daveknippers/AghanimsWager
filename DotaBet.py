@@ -34,11 +34,15 @@ Building State: {building_state}'''
 		self.match_details = None
 		self.message_id = None
 
+		self.old_message = None
+
 		#self.update_announce(self)
 				
 	async def announce(self):
 		live_df = pd.read_sql_query(pgdb.select_lm(self.lobby_id,self.last_update,query_only=True),con=pgdb.conn)
 		if len(live_df) == 0:
+			# should instead check if we're about to write the exact same thing, last_update isn't as robust as i assumed
+			print('no new live games found since {}'.format(self.last_update))
 			return
 		start_last_update = self.last_update
 		last_update_df = live_df[live_df['query_time'] == live_df['query_time'].max()]
@@ -47,21 +51,27 @@ Building State: {building_state}'''
 		self.last_update = self.match_details['last_update_time']
 		print('updating {} to {}'.format(start_last_update,self.last_update))
 		m = Lobby.msg_template.format(**self.match_details)
-		if self.message_id:
-			print('editing message {}'.format(self.message_id))
-			await self.match_message.edit(content=m)
+		if self.old_message != None and m == self.old_message:
+			print('leaving without editing')
+			return
 		else:
-			if (message_id := pgdb.select_message(self.lobby_id)):
-				self.message_id = message_id[0]
-				self.match_message = await self.channel.fetch_message(self.message_id)
 			if self.message_id:
-				print('using old message_id {}'.format(self.message_id))
+				print('editing message {}'.format(self.message_id))
 				await self.match_message.edit(content=m)
+				self.old_message = m
 			else:
-				self.match_message = await self.channel.send(m)
-				self.message_id = self.match_message.id
-				print('making new message_id {}'.format(self.message_id))
-				pgdb.insert_message(self.lobby_id,self.message_id)
+				if (message_id := pgdb.select_message(self.lobby_id)):
+					self.message_id = message_id[0]
+					self.match_message = await self.channel.fetch_message(self.message_id)
+				if self.message_id:
+					print('using old message_id {}'.format(self.message_id))
+					await self.match_message.edit(content=m)
+				else:
+					self.match_message = await self.channel.send(m)
+					self.message_id = self.match_message.id
+					print('making new message_id {}'.format(self.message_id))
+					pgdb.insert_message(self.lobby_id,self.message_id)
+				self.old_message = m
 			
 class DotaBet(commands.Bot):
 	def __init__(self, *args, **kwargs):
@@ -82,9 +92,10 @@ class DotaBet(commands.Bot):
 	async def do_stuff(self):
 		channel = discord.utils.get(self.get_all_channels(), name='dota-bet')
 		while True:
-			await asyncio.sleep(10)
+			await asyncio.sleep(5)
 
 			for live_lobby_id in map(lambda x: x[0],pgdb.get_live()):
+				print('lobby found: {}'.format(live_lobby_id))
 				
 				if live_lobby_id in self.live_lobbies.keys():
 					live_lobby = self.live_lobbies[live_lobby_id]
