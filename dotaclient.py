@@ -19,7 +19,7 @@ from dota2.proto_enums import EDOTAGCMsg
 
 from tokens import STEAM_BOT_ACCOUNT, STEAM_BOT_PASSWORD, CONNECTION_STRING
 
-from pgdb import PGDB, LP_STATUS
+from app_db import PGDB, LP_STATUS
 
 client = SteamClient()
 dota = Dota2Client(client)
@@ -29,6 +29,7 @@ SLEEPY_TIME = 10
 source_tv_lobbies = set()
 live_players_processed = defaultdict(lambda: LP_STATUS.NOT_FOUND)
 rp_heroes_processed = set()
+FRIENDS_IN_DB = False
 
 def add_rp_hero(lobby_id,steam_id,rich_presence):
 	if (lobby_id,steam_id) not in rp_heroes_processed:
@@ -74,8 +75,6 @@ def investigate_ClientPersonaState(msg):
 				except KeyError:
 					pass
 	
-
-
 @dota.on(EDOTAGCMsg.EMsgGCToClientFindTopSourceTVGamesResponse)
 def process_lobby_states(msg):
 	logging.warning('Starting process_lobby_states')
@@ -86,7 +85,6 @@ def process_lobby_states(msg):
 			game = proto_to_dict(g)
 			logging.warning('match_id: {}'.format(game['match_id']))
 			logging.warning('game_time: {}'.format(game['game_time']))
-			logging.warning('radiant_lead time: {}'.format(game['radiant_lead']))
 			match_id = game['match_id']
 			game['query_time'] = query_time
 			players = game['players']
@@ -117,10 +115,15 @@ def start_dota():
 
 @dota.on('ready')
 def lobby_loop():
+	global FRIENDS_IN_DB
 	logging.info('Dota GC communications prepared')
 	current_live_lobbies = set()
 	pgdb.replace_live(current_live_lobbies)
 	while True:
+		if not FRIENDS_IN_DB and client.friends.ready:
+			friend_ids = list(map(lambda x: int(x.steam_id),client.friends))
+			pgdb.replace_friends(friend_ids)
+			FRIENDS_IN_DB = True
 		gevent.sleep(SLEEPY_TIME)
 		logging.warning('Checking lobbies...')
 		logging.warning('current_live_lobbies: {}'.format(current_live_lobbies))
@@ -145,7 +148,6 @@ def handle_disconnect():
 		client.reconnect
 
 pgdb = PGDB(CONNECTION_STRING)
-
 	
 result = client.cli_login(username=STEAM_BOT_ACCOUNT,password=STEAM_BOT_PASSWORD)
 if result != EResult.OK:

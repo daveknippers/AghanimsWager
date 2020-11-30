@@ -65,6 +65,9 @@ class PGDB:
 			db.Column('dire_score',db.Integer,nullable=False),
 			db.Column('building_state',db.Integer,nullable=False))
 
+		self.friends = db.Table('friends', self.metadata,
+			db.Column('steam_id',db.BigInteger,nullable=False))
+
 		self.live_players = db.Table('live_players', self.metadata,
 			db.Column('match_id',db.BigInteger,nullable=False),
 			db.Column('player_num',db.Integer,nullable=False),
@@ -80,6 +83,30 @@ class PGDB:
 
 		self.metadata.create_all(self.engine)
 
+	def replace_friends(self,friend_ids):
+		begin_statement = '''BEGIN WORK;
+LOCK TABLE "Kali".friends IN ACCESS EXCLUSIVE MODE;'''
+		delete = str(self.friends.delete())+';'
+		end_statement = text('COMMIT WORK;')
+		friend_template = text('INSERT INTO "Kali".friends VALUES (:steam_id)')
+		friend_statements = []
+		for f in friend_ids:
+			friend_statements.append(str(friend_template.bindparams(steam_id = f).compile(compile_kwargs={"literal_binds": True}))+';')
+		friend_statement = '\n'.join(friend_statements)
+		lock_statement = '''{}
+{}
+{}
+{}'''.format(begin_statement,delete,friend_statement,end_statement)
+		print(lock_statement)
+		result = self.conn.execute(lock_statement)
+		print('result rowcount:',result.rowcount)
+
+	def select_friends(self):
+		f = self.friends
+		q = db.select([f])
+		result = self.conn.execute(q).fetchall()
+		return result
+		
 	def replace_live(self,lobbies):
 		begin_statement = '''BEGIN WORK;
 LOCK TABLE "Kali".live_lobbies IN ACCESS EXCLUSIVE MODE;'''
@@ -138,14 +165,19 @@ LOCK TABLE "Kali".live_lobbies IN ACCESS EXCLUSIVE MODE;'''
 		lp = self.live_players
 		insert = lp.insert().values(players)
 		result = self.conn.execute(insert)
+		if any(map(lambda x: x == 0,map(lambda x: x['hero_id'],players))):
+			return LP_STATUS.INIT
+		else:
+			return LP_STATUS.VALID
+
 
 	def update_lp(self,players):
 		lp = self.live_players
 		error = False
 		for p in players:
 			update = lp.update().values(hero_id = p['hero_id']).where(db.and_(lp.c.match_id == p['match_id'],
-																			   lp.c.player_num == p['player_num'],
-																			   lp.c.account_id == p['account_id']))
+								   lp.c.player_num == p['player_num'],
+								   lp.c.account_id == p['account_id']))
 			result = self.conn.execute(update)
 			if result.rowcount != 1:
 				error = True
@@ -161,7 +193,7 @@ LOCK TABLE "Kali".live_lobbies IN ACCESS EXCLUSIVE MODE;'''
 		logging.info('executing: {}'.format(s))
 		if (result := self.conn.execute(s).fetchall()):
 			if len(result) != 10:
-				logging.info('Unexpected number of players in match_id {}'.format(match_id))
+				logging.warning('Unexpected number of players in match_id {}'.format(match_id))
 				return LP_STATUS.INVALID
 			elif any(map(lambda x: x == 0,map(lambda x: x['hero_id'],result))):
 				return LP_STATUS.INIT
@@ -171,10 +203,18 @@ LOCK TABLE "Kali".live_lobbies IN ACCESS EXCLUSIVE MODE;'''
 			logging.info('no live players found for match_id = {}'.format(match_id))
 			return LP_STATUS.NOT_FOUND
 
+	def read_lp(self,match_id):
+		lp = self.live_players
+		s = db.select([lp]).where(lp.c.match_id == match_id)
+		results = self.conn.execute(s)
+		keys = results.keys()
+		results = results.fetchall()
+		return results,keys
+
 	def insert_rp(self,row):
 		rp = self.rp_heroes
 		s = db.select([rp]).where(db.and_(rp.c.lobby_id == row['lobby_id'],
-										  rp.c.steam_id == row['steam_id']))
+						  rp.c.steam_id == row['steam_id']))
 		logging.info('executing: {}'.format(s))
 		if (result := self.conn.execute(s).fetchall()):
 			logging.info('result: {}'.format(result))
