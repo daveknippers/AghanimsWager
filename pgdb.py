@@ -15,7 +15,7 @@ class LP_STATUS(Enum):
 class PGDB:
 
 	def __init__(self,conn_string):
-		self.engine = db.create_engine(conn_string)
+		self.engine = db.create_engine(conn_string,isolation_level="AUTOCOMMIT")
 		self.conn = self.engine.connect()
 		self.metadata = db.MetaData(schema='Kali')
 
@@ -101,9 +101,7 @@ LOCK TABLE "Kali".live_lobbies IN ACCESS EXCLUSIVE MODE;'''
 	def get_live(self):
 		ll = self.live_lobbies
 		q = db.select([ll])
-		#logging.warning('executing: {}'.format(q))
 		result = self.conn.execute(q).fetchall()
-		#logging.warning('result: {}'.format(result))
 		return result
 
 	def insert_message(self,lobby_id,message_id):
@@ -114,7 +112,7 @@ LOCK TABLE "Kali".live_lobbies IN ACCESS EXCLUSIVE MODE;'''
 	def select_message(self,lobby_id):
 		lm = self.lobby_message
 		s = db.select([lm.c.message_id]).where(lm.c.lobby_id == lobby_id)
-		return self.conn.execute(s).fetchone()
+		return self.conn.execute(s).fetchall()
 
 	def select_lm(self,lobby_id,last_update_time=None,query_only=False):
 		lm = self.live_matches
@@ -126,8 +124,10 @@ LOCK TABLE "Kali".live_lobbies IN ACCESS EXCLUSIVE MODE;'''
 		if query_only:
 			return s
 		else:
-			results = self.conn.execute(s).fetchall()
-			return results
+			results = self.conn.execute(s)
+			keys = results.keys()
+			results = results.fetchall()
+			return results,keys
 
 	def insert_lm(self,row):
 		lm = self.live_matches
@@ -176,7 +176,7 @@ LOCK TABLE "Kali".live_lobbies IN ACCESS EXCLUSIVE MODE;'''
 		s = db.select([rp]).where(db.and_(rp.c.lobby_id == row['lobby_id'],
 										  rp.c.steam_id == row['steam_id']))
 		logging.info('executing: {}'.format(s))
-		if (result := self.conn.execute(s).fetchone()):
+		if (result := self.conn.execute(s).fetchall()):
 			logging.info('result: {}'.format(result))
 			return False
 		else:
