@@ -1,6 +1,6 @@
 
 import asyncio, json
-import datetime as dt
+import datetime
 
 import discord
 import discord.utils
@@ -16,6 +16,7 @@ from tokens import TOKEN, CONNECTION_STRING
 from pgdb import PGDB
 
 pgdb = PGDB(CONNECTION_STRING)
+
 
 class Lobby:
 
@@ -36,10 +37,9 @@ Building State: {building_state}'''
 
 		self.old_message = None
 
-		#self.update_announce(self)
-				
 	async def announce(self):
-		live_df = pd.read_sql_query(pgdb.select_lm(self.lobby_id,self.last_update,query_only=True),con=pgdb.conn)
+		db_result,columns = pgdb.select_lm(self.lobby_id,self.last_update)
+		live_df = pd.DataFrame(db_result,columns=columns)
 		if len(live_df) == 0:
 			# should instead check if we're about to write the exact same thing, last_update isn't as robust as i assumed
 			print('no new live games found since {}'.format(self.last_update))
@@ -61,7 +61,7 @@ Building State: {building_state}'''
 				self.old_message = m
 			else:
 				if (message_id := pgdb.select_message(self.lobby_id)):
-					self.message_id = message_id[0]
+					self.message_id = message_id[0][0]
 					self.match_message = await self.channel.fetch_message(self.message_id)
 				if self.message_id:
 					print('using old message_id {}'.format(self.message_id))
@@ -92,7 +92,7 @@ class DotaBet(commands.Bot):
 	async def do_stuff(self):
 		channel = discord.utils.get(self.get_all_channels(), name='dota-bet')
 		while True:
-			await asyncio.sleep(5)
+			await asyncio.sleep(10)
 
 			live_lobbies = pgdb.get_live()
 			live_lobbies = list(map(lambda x: x[0],live_lobbies))
@@ -107,7 +107,7 @@ class DotaBet(commands.Bot):
 					self.live_lobbies[live_lobby_id] = live_lobby
 
 				await live_lobby.announce()
+			print('finished iterating through {} lobbies'.format(len(live_lobbies)))
 
-				
 bot = DotaBet(command_prefix='!', description='Kali Roulette')
 bot.run(TOKEN)
