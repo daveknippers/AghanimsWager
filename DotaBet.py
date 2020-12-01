@@ -17,7 +17,7 @@ pgdb = PGDB(CONNECTION_STRING)
 with open('heroes.json') as f:
 	hero_data = json.load(f)
 	hero_data = dict(map(lambda x: (x['id'],(x['name'],x['localized_name'])),hero_data['heroes']))
-	hero_data[0] = 'null'
+	hero_data[0] = ('null','null')
 
 def convert_steam_to_account(steam_id):
 	id_str = str(steam_id)
@@ -30,7 +30,7 @@ def convert_steam_to_account(steam_id):
 class Lobby:
 
 	msg_template = '''Live game: {match_id}
-Last Update Time: {last_update_time}
+Game Time: {game_time}
 Average MMR: {average_mmr}
 Radiant Lead: {radiant_lead}
 Radiant Score: {radiant_score}
@@ -48,7 +48,7 @@ Building State: {building_state}'''
 		self.player_id = None
 		self.match_id = None
 
-		self.player_msg_id = None
+		self.player_msg_obj = None
 		self.player_msg = None
 
 	async def announce(self):
@@ -72,8 +72,11 @@ Building State: {building_state}'''
 		player_msg = player_df.apply(lambda x: player_msg_template(**x),1)
 		player_msg = '\n'.join(player_msg.values)
 
-		if self.player_msg_id == None or player_msg != self.player_msg:
-			self.player_msg_id = await self.channel.send(player_msg)
+		if self.player_msg_obj == None:
+			self.player_msg_obj = await self.channel.send(player_msg)
+			self.player_msg = player_msg
+		elif player_msg != self.player_msg:
+			await self.player_msg_obj.edit(content=player_msg)
 			self.player_msg = player_msg
 			
 		self.last_update = self.match_details['last_update_time']
