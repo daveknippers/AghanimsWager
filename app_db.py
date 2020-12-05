@@ -6,6 +6,11 @@ from sqlalchemy import exc, text
 import logging
 from enum import Enum, auto
 
+class MATCH_STATUS(Enum):
+	UNRESOLVED = auto()
+	RADIANT = auto()
+	DIRE = auto()
+
 class LP_STATUS(Enum):
 	NOT_FOUND = auto()	
 	INIT = auto()	
@@ -39,7 +44,15 @@ class PGDB:
 		self.live_lobbies = db.Table('live_lobbies', self.metadata,
 			db.Column('lobby_id',db.BigInteger,nullable=False))
 
+		self.match_status = db.Table('match_status', self.metadata,
+			db.Column('match_id',db.BigInteger,nullable=False),
+			db.Column('status',db.Integer,nullable=False))
+
 		self.lobby_message = db.Table('lobby_message', self.metadata,
+			db.Column('lobby_id',db.BigInteger,nullable=False,primary_key=True),
+			db.Column('message_id',db.BigInteger,nullable=False))
+
+		self.players_message = db.Table('players_message', self.metadata,
 			db.Column('lobby_id',db.BigInteger,nullable=False,primary_key=True),
 			db.Column('message_id',db.BigInteger,nullable=False))
 
@@ -82,6 +95,24 @@ class PGDB:
 			db.Column('param2',db.String,nullable=True))
 
 		self.metadata.create_all(self.engine)
+
+
+	def insert_match_status(self,match_id):
+		ms = self.match_status
+		insert = ms.insert().values(match_id=match_id,status=MATCH_STATUS.UNRESOLVED)
+		result = self.conn.execute(insert)
+
+	def check_match_status(self,match_id):
+		ms = self.match_status
+		q = db.select([ms.c.status]).where(ms.c.match_id == match_id)
+		result = self.conn.execute(q).fetchall()
+		return result
+
+	def get_unresolved_matches(self):
+		ms = self.match_status
+		q = db.select([ms.c.match_id]).where(ms.c.match_status == MATCH_STATUS.UNRESOLVED)
+		result = self.conn.execute(q).fetchall()
+		return result
 
 	def replace_friends(self,friend_ids):
 		begin_statement = '''BEGIN WORK;
@@ -131,12 +162,22 @@ LOCK TABLE "Kali".live_lobbies IN ACCESS EXCLUSIVE MODE;'''
 		result = self.conn.execute(q).fetchall()
 		return result
 
-	def insert_message(self,lobby_id,message_id):
+	def insert_players_message(self,lobby_id,message_id):
+		pm = self.players_message
+		insert = pm.insert().values(lobby_id=lobby_id,message_id=message_id)
+		result = self.conn.execute(insert)
+
+	def select_players_message(self,lobby_id):
+		pm = self.players_message
+		s = db.select([pm.c.message_id]).where(pm.c.lobby_id == lobby_id)
+		return self.conn.execute(s).fetchall()
+
+	def insert_match_message(self,lobby_id,message_id):
 		lm = self.lobby_message
 		insert = lm.insert().values(lobby_id=lobby_id,message_id=message_id)
 		result = self.conn.execute(insert)
 
-	def select_message(self,lobby_id):
+	def select_match_message(self,lobby_id):
 		lm = self.lobby_message
 		s = db.select([lm.c.message_id]).where(lm.c.lobby_id == lobby_id)
 		return self.conn.execute(s).fetchall()
