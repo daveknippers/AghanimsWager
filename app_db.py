@@ -4,12 +4,13 @@ import sqlalchemy as db
 from sqlalchemy import exc, text
 
 import logging
-from enum import Enum, auto
+from enum import Enum, auto, IntEnum
 
-class MATCH_STATUS(Enum):
+class MATCH_STATUS(IntEnum):
 	UNRESOLVED = auto()
 	RADIANT = auto()
 	DIRE = auto()
+	ERROR = auto()
 
 class LP_STATUS(Enum):
 	NOT_FOUND = auto()	
@@ -81,6 +82,10 @@ class PGDB:
 		self.friends = db.Table('friends', self.metadata,
 			db.Column('steam_id',db.BigInteger,nullable=False))
 
+		self.discord_ids = db.Table('discord_ids', self.metadata,
+			db.Column('discord_id',db.BigInteger,nullable=False),
+			db.Column('steam_id',db.BigInteger,nullable=False))
+
 		self.live_players = db.Table('live_players', self.metadata,
 			db.Column('match_id',db.BigInteger,nullable=False),
 			db.Column('player_num',db.Integer,nullable=False),
@@ -96,10 +101,30 @@ class PGDB:
 
 		self.metadata.create_all(self.engine)
 
+	def insert_discord_id(self,discord_id,steam_id):
+		di = self.discord_ids
+		q = db.select([di.c.discord_id]).where(di.c.discord_id == discord_id)
+		result = self.conn.execute(q).fetchall()
+		if len(result) == 0:
+			insert = di.insert().values(discord_id=discord_id,steam_id=steam_id)
+			return self.conn.execute(insert)
+		elif len(result) == 1:
+			update = di.update().values(steam_id = steam_id).where(di.c.discord_id == discord_id)
+			return self.conn.execute(update)
+		elif len(result) > 1:
+			print('Insert discord_id/steam_id failed for {} / {}, multiple results returned'.format(discord_id,steam_id))
+			return None
+
+	def update_match_status(self,match_id,status):
+		ms = self.match_status
+		update = ms.update().values(status = int(status)).where(ms.c.match_id == match_id)
+		result = self.conn.execute(update)
+		if result.rowcount != 1:
+			logging.warning('update match status returned {} results'.format(results.rowcount))
 
 	def insert_match_status(self,match_id):
 		ms = self.match_status
-		insert = ms.insert().values(match_id=match_id,status=MATCH_STATUS.UNRESOLVED)
+		insert = ms.insert().values(match_id=match_id,status=int(MATCH_STATUS.UNRESOLVED))
 		result = self.conn.execute(insert)
 
 	def check_match_status(self,match_id):
@@ -109,8 +134,11 @@ class PGDB:
 		return result
 
 	def get_unresolved_matches(self):
-		ms = self.match_status
-		q = db.select([ms.c.match_id]).where(ms.c.match_status == MATCH_STATUS.UNRESOLVED)
+		q = '''SELECT DISTINCT lm.lobby_id
+FROM "Kali".match_status AS ms
+LEFT OUTER JOIN "Kali".live_matches as lm
+ON lm.match_id = ms.match_id
+WHERE ms.status = 1'''
 		result = self.conn.execute(q).fetchall()
 		return result
 
