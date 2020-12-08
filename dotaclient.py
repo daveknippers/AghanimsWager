@@ -128,7 +128,6 @@ def lobby_loop():
 		logging.warning('Checking lobbies...')
 		logging.warning('current_live_lobbies: {}'.format(current_live_lobbies))
 		logging.warning('source_tv_lobbies: {}'.format(source_tv_lobbies))
-		check_time = datetime.datetime.now()
 		n_lobbies = len(source_tv_lobbies)
 		if n_lobbies > 0:
 			if current_live_lobbies != source_tv_lobbies:
