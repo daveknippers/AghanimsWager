@@ -40,7 +40,10 @@ def convert_steam_to_account(steam_id):
 
 class MatchMsg:
 
-	players_msg_template = '''```=========== Radiant ==========
+	players_msg_template = '''```
+Match ID: {match_id} 
+
+=========== Radiant ==========
 ------------------------------
 --\t{0}
 --\t{1}
@@ -57,7 +60,7 @@ class MatchMsg:
 --\t{9}
 ------------------------------\n'''
 
-	match_msg_template = '''Match ID: {match_id}
+	match_msg_template = '''
 Game Time: {game_time}
 Average MMR: {average_mmr}
 Radiant Lead: {radiant_lead}
