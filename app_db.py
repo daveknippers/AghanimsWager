@@ -6,6 +6,7 @@ from sqlalchemy import exc, text
 import logging
 from enum import Enum, auto, IntEnum
 
+
 class MATCH_STATUS(IntEnum):
 	UNRESOLVED = auto()
 	RADIANT = auto()
@@ -25,13 +26,6 @@ class PGDB:
 		self.conn = self.engine.connect()
 		self.metadata = db.MetaData(schema='Kali')
 
-		self.match_ledger = db.Table('match_ledger', self.metadata,
-			db.Column('match_id',db.Integer,db.Sequence('match_seq'),primary_key=True,nullable=False),
-			db.Column('discord_id',db.BigInteger,nullable=False),
-			db.Column('side',db.String(7),nullable=False),
-			db.Column('winning_side',db.String(7),nullable=True),
-			db.Column('creation_time',db.DateTime,nullable=False))
-
 		self.bet_ledger = db.Table('bet_ledger', self.metadata,
 			db.Column('match_id',db.Integer,nullable=False),
 			db.Column('gambler_id',db.BigInteger,nullable=False),
@@ -50,10 +44,6 @@ class PGDB:
 			db.Column('status',db.Integer,nullable=False))
 
 		self.lobby_message = db.Table('lobby_message', self.metadata,
-			db.Column('lobby_id',db.BigInteger,nullable=False,primary_key=True),
-			db.Column('message_id',db.BigInteger,nullable=False))
-
-		self.players_message = db.Table('players_message', self.metadata,
 			db.Column('lobby_id',db.BigInteger,nullable=False,primary_key=True),
 			db.Column('message_id',db.BigInteger,nullable=False))
 
@@ -101,6 +91,12 @@ class PGDB:
 
 		self.metadata.create_all(self.engine)
 
+	def select_discord_ids(self):
+		di = self.discord_ids
+		q = db.select([di])
+		result = self.conn.execute(q).fetchall()
+		return result
+		
 	def insert_discord_id(self,discord_id,steam_id):
 		di = self.discord_ids
 		q = db.select([di.c.discord_id]).where(di.c.discord_id == discord_id)
@@ -183,7 +179,7 @@ LOCK TABLE "Kali".live_lobbies IN ACCESS EXCLUSIVE MODE;'''
 		print(lock_statement)
 		result = self.conn.execute(lock_statement)
 		print('result rowcount:',result.rowcount)
-		
+
 	def get_live(self):
 		ll = self.live_lobbies
 		q = db.select([ll])
@@ -223,6 +219,11 @@ LOCK TABLE "Kali".live_lobbies IN ACCESS EXCLUSIVE MODE;'''
 			results = self.conn.execute(s)
 			keys = results.keys()
 			results = results.fetchall()
+			if len(results) == 0:
+				print('select_lm returned 0 results (expected race when live_lobbies updates before live_matches)')
+				print('lobby_id: {}'.format(lobby_id))
+				print('last_update_time: {}'.format(last_update_time))
+				print('query: {}'.format(str(s)))
 			return results,keys
 
 	def insert_lm(self,row):
@@ -238,7 +239,6 @@ LOCK TABLE "Kali".live_lobbies IN ACCESS EXCLUSIVE MODE;'''
 			return LP_STATUS.INIT
 		else:
 			return LP_STATUS.VALID
-
 
 	def update_lp(self,players):
 		lp = self.live_players
@@ -304,29 +304,11 @@ LOCK TABLE "Kali".live_lobbies IN ACCESS EXCLUSIVE MODE;'''
 			result = self.conn.execute(insert)
 			return 1000
 	
-	def start_match(self,discord_id,side):
-		now = dt.datetime.now()
-		ml = self.match_ledger
-		s = db.select([ml.c.discord_id,ml.c.winning_side,ml.c.creation_time])\
-			.where(db.and_(	self.match_ledger.c.discord_id == discord_id, 
-							self.match_ledger.c.winning_side == None))
-		if (result := self.conn.execute(s).fetchone()):
-			return False,result.creation_time
-		else:
-			insert = self.match_ledger.insert().values(discord_id=discord_id,side=side,creation_time=now)
-			result = self.conn.execute(insert)
-			return True,now
-
-	def set_winner(self,discord_id,winning_side):
-		raise NotImplemented
-		ml = self.match_ledger
-		s = db.select([ml.c.discord_id,ml.c.winning_side,ml.c.creation_time])\
-			.where(db.and_(	self.match_ledger.c.discord_id == discord_id, 
-							self.match_ledger.c.winning_side == None))
-		if (result := self.conn.execute(s).fetchone()):
-			return False,result.creation_time
-		else:
-			insert = self.match_ledger.insert().values(discord_id=discord_id,side=side,creation_time=now)
-			result = self.conn.execute(insert)
-			return True,now
-
+	'''
+	def insert_bet(self,match_id,discord_id,side,amount):
+	
+			db.Column('match_id',db.Integer,nullable=False),
+			db.Column('gambler_id',db.BigInteger,nullable=False),
+			db.Column('bet_side',db.String(7),nullable=False),
+			db.Column('amount',db.BigInteger,nullable=False))
+	'''
