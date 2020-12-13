@@ -63,11 +63,21 @@ def investigate_ClientPersonaState(msg):
 				try:
 					status = f.rich_presence['status']
 					if status == '#DOTA_RP_PLAYING_AS':
-						watchable_game_id = int(f.rich_presence['WatchableGameID'])
-						steam_id = f.steam_id
-						if watchable_game_id != 0:
-							source_tv_lobbies.add(watchable_game_id)
-							add_rp_hero(watchable_game_id,steam_id,f.rich_presence)
+						is_lobby = False
+						try:
+							if f.rich_presence['param0'] == '#DOTA_lobby_type_name_lobby':
+								is_lobby = True
+							else:
+								is_lobby = False
+						except KeyError:
+							is_lobby = False
+
+						if not is_lobby:
+							watchable_game_id = int(f.rich_presence['WatchableGameID'])
+							steam_id = f.steam_id
+							if watchable_game_id != 0:
+								source_tv_lobbies.add(watchable_game_id)
+								add_rp_hero(watchable_game_id,steam_id,f.rich_presence)
 					elif status == '#DOTA_RP_HERO_SELECTION' or status == '#DOTA_RP_STRATEGY_TIME':
 						watchable_game_id = int(f.rich_presence['WatchableGameID'])
 						if watchable_game_id != 0:

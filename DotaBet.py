@@ -20,8 +20,8 @@ from DotaWebAPI import schuck_match_details
 GAMBLING_CLOSE_WAIT = 45
 
 CURRENCY = 'golden salt'
-INFO_CHANNEL = 'dota-bet'
-COMM_CHANNEL = 'dota2'
+INFO_CHANNEL = 'dota-bet-info'
+COMM_CHANNEL = 'dota-bet'
 
 pgdb = PGDB(CONNECTION_STRING)
 
@@ -40,7 +40,7 @@ def convert_steam_to_account(steam_id):
 
 class MatchMsg:
 
-	players_msg_template = '''```=========== Radiant ==========
+	players_msg_template = '''=========== Radiant ==========
 ------------------------------
 --\t{0}
 --\t{1}
@@ -57,8 +57,8 @@ class MatchMsg:
 --\t{9}
 ------------------------------\n'''
 
-	match_msg_template = '''Match ID: {match_id}
-Game Time: {game_time}
+	match_msg_template_1 = '```Match ID: {match_id}\n'
+	match_msg_template_2 = '''Game Time: {game_time}
 Average MMR: {average_mmr}
 Radiant Lead: {radiant_lead}
 Radiant Score: {radiant_score}
@@ -75,6 +75,7 @@ Building State: {building_state}'''
 
 		self.winner = MATCH_STATUS.UNRESOLVED
 		self.gambling_close = None
+		self.gambling_initialized = False
 
 	async def init_msg_objs(self):
 		if self.match_msg_obj == None:	
@@ -85,10 +86,11 @@ Building State: {building_state}'''
 				self.match_msg = self.match_msg_obj.content
 
 	async def update(self, match_details, players_msgs, pick_phase):
-		match_msg = MatchMsg.match_msg_template.format(**match_details)
+		match_msg_1 = MatchMsg.match_msg_template_1.format(**match_details)
+		match_msg_2 = MatchMsg.match_msg_template_2.format(**match_details)
 		players_msg = MatchMsg.players_msg_template.format(*players_msgs)
 		
-		match_msg = players_msg+match_msg
+		match_msg = match_msg_1+players_msg+match_msg_2
 
 		if self.winner == MATCH_STATUS.UNRESOLVED:
 			winning_side = 'Match In Progress'
@@ -100,6 +102,7 @@ Building State: {building_state}'''
 			winning_side = 'Error parsing match result'
 		match_msg += '\nMatch Winner: {}'.format(winning_side)
 
+		self.gambling_initialized = True
 		if pick_phase:
 			self.gambling_message = 'Bets are open'
 
@@ -139,7 +142,7 @@ Building State: {building_state}'''
 			w = 'Radiant'
 		elif winner == MATCH_STATUS.DIRE:
 			w = 'Dire'
-		elif winner == MATCH_STATUS.RADIANT:
+		elif winner == MATCH_STATUS.ERROR:
 			w = 'Not scored'
 		else:
 			print('announce winner called without winner for lobby id {}'.format(self.lobby_id))
@@ -189,6 +192,7 @@ class Lobby:
 
 		if self.match_id == None:
 			self.match_id = match_details['match_id']
+			self.client.match_id_to_lobby[self.match_id] = self
 			check_match_status = pgdb.check_match_status(self.match_id)
 			if len(check_match_status) == 0:
 				pgdb.insert_match_status(self.match_id)
@@ -219,6 +223,7 @@ class BookKeeper(commands.Bot):
 		super().__init__(*args,**kwargs)
 
 		self.lobby_objs = {}
+		self.match_id_to_lobby = {}
 		self.waiting_on = set()
 
 		self.channel = None
@@ -283,6 +288,7 @@ class BookKeeper(commands.Bot):
 
 		await live_lobby.announce()
 
+	async def finalize_lobby(self,live_lobby_id):
 
 bot = BookKeeper(command_prefix='!', description='DotaBet')
 
@@ -328,17 +334,36 @@ async def bet(ctx,*arg):
 	if not match_id.isdigit():
 		await ctx.send('{}, match_id must be an integer'.format(ctx.message.author.mention))
 		return 
+	else:
+		match_id = int(match_id)
+
 	if side.lower() not in ['radiant','dire']:
 		await ctx.send('{}, must enter side as either radiant or dire'.format(ctx.message.author.mention))
 		return
+	else:
+		side = side.lower()
+
 	if not amount.isdigit():
 		await ctx.send('{}, amount must be an integer'.format(ctx.message.author.mention))
 		return
-	await ctx.send('{}, this is where your bet would be processed if i wrote the code'.format(ctx.message.author.mention))
-		
-	
-		
+	else:
+		amount = int(amount)
 
+	try:
+		lobby = bot.match_id_to_lobby[match_id]
+	except:
+		await ctx.send('{}, match id {} not found'.format(ctx.message.author.mention,match_id))
+		return
+		
+	current_time = int(time.mktime(datetime.datetime.now().timetuple()))
+	if lobby.match_obj.gambling_initialized and (not lobby.match_obj.gambling_close or lobby.match_obj.gambling_close > current_time):
+		msg = pgdb.insert_bet(match_id,ctx.message.author.id,side,amount)
+		msg = msg.replace('CURRENCY',CURRENCY)
+		await ctx.send('{}, {}'.format(ctx.message.author.mention,msg))
+		return
+	else:
+		await ctx.send('{}, betting for {} is closed'.format(ctx.message.author.mention,match_id))
+		return
+		
 bot.run(TOKEN)
-
 
