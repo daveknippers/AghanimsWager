@@ -17,7 +17,12 @@ from app_db import PGDB, MATCH_STATUS
 
 from DotaWebAPI import schuck_match_details
 
-GAMBLING_CLOSE_WAIT = 45
+SUPERUSER_ID = 148293973331542017
+
+# things to do: add a auto balance check for discord ids -2 and -3
+
+GAMBLING_CLOSE_WAIT = 120
+RESTART_LAST_CHANCE = 2000
 
 CURRENCY = 'golden salt'
 INFO_CHANNEL = 'dota-bet-info'
@@ -107,12 +112,12 @@ Building State: {building_state}'''
 			self.gambling_message = 'Bets are open'
 
 		elif not pick_phase and not self.gambling_close:
-			if match_details['game_time'] > 200:
+			if match_details['game_time'] > RESTART_LAST_CHANCE:
 				self.gambling_close = int(time.mktime(datetime.datetime.now().timetuple()))
 				self.gambling_message = 'Bets are closed'
 			else:
 				self.gambling_close = int(time.mktime(datetime.datetime.now().timetuple()))+GAMBLING_CLOSE_WAIT
-				self.gambling_message = 'Bets are closing in ~45 second(s)'
+				self.gambling_message = 'Bets are closing in ~{} second(s)'.format(GAMBLING_CLOSE_WAIT)
 		elif not pick_phase:
 			current_time = int(time.mktime(datetime.datetime.now().timetuple()))
 			if current_time > self.gambling_close:
@@ -189,13 +194,14 @@ class Lobby:
 		match_details = dict(map(lambda x: (x[0],next(iter(x[1].values()))),match_details))
 
 		self.last_update = match_details['last_update_time']
+		init_match_status = False
 
 		if self.match_id == None:
 			self.match_id = match_details['match_id']
 			self.client.match_id_to_lobby[self.match_id] = self
 			check_match_status = pgdb.check_match_status(self.match_id)
 			if len(check_match_status) == 0:
-				pgdb.insert_match_status(self.match_id)
+				init_match_status = True
 			else:
 				check_match_status = check_match_status[0][0]
 				if check_match_status != MATCH_STATUS.UNRESOLVED:
@@ -211,6 +217,10 @@ class Lobby:
 		pick_phase = any(player_df['hero_id'] == 0)
 		player_df.sort_values(by=['player_num'],inplace=True)
 		player_df['hero_name'] = player_df['hero_id'].apply(lambda x: hero_data[x][1])
+		player_df['side'] = player_df['player_num'].apply(lambda x: int(MATCH_STATUS.RADIANT) if x < 5 else int(MATCH_STATUS.DIRE))
+
+		if init_match_status:
+			pgdb.insert_match_status(self.match_id,player_df[['discord_id','side']].dropna().values)
 
 		player_df['discord_name'] = player_df['discord_name'].fillna('')
 
@@ -288,13 +298,11 @@ class BookKeeper(commands.Bot):
 
 		await live_lobby.announce()
 
-	async def finalize_lobby(self,live_lobby_id):
-
 bot = BookKeeper(command_prefix='!', description='DotaBet')
 
 @bot.command()
 async def add_steam_id(ctx,*arg):
-	if ctx.guild is not None and str(ctx.message.channel) != COMM_CHANNEL:
+	if ctx.guild and str(ctx.message.channel) != COMM_CHANNEL:
 		return
 	if len(arg) != 1:
 		await ctx.send('Invalid syntax, try !add_steam_id steam_id')
@@ -309,12 +317,12 @@ async def add_steam_id(ctx,*arg):
 
 @bot.command()
 async def hi(ctx,*arg):
-	if ctx.guild is None or str(ctx.message.channel) == COMM_CHANNEL:
+	if ctx.guild and str(ctx.message.channel) != COMM_CHANNEL:
 		await ctx.send('{} ?'.format(ctx.message.author.mention))
 
 @bot.command()
 async def balance(ctx,*arg):
-	if ctx.guild is not None and str(ctx.message.channel) != COMM_CHANNEL:
+	if ctx.guild and str(ctx.message.channel) != COMM_CHANNEL:
 		return
 	amount = pgdb.check_balance(ctx.message.author.id)
 	if amount != 1:
@@ -324,8 +332,31 @@ async def balance(ctx,*arg):
 	await ctx.send(msg)
 
 @bot.command()
+async def active_bets(ctx,*arg):
+	if ctx.guild and str(ctx.message.channel) != COMM_CHANNEL:
+		return
+	if len(arg) == 0:
+		msg = pgdb.return_active_bets(ctx.message.author.id)
+		await ctx.send('{}, {}'.format(ctx.message.author.mention,msg))
+	elif len(arg) == 1:
+		if arg[0] == 'all' and ctx.message.author.id == SUPERUSER_ID:
+			msg = pgdb.return_active_bets()
+			await ctx.send('{}, {}'.format(ctx.message.author.mention,msg))
+		else:
+			match_id = arg[0]
+			if not match_id.isdigit():
+				await ctx.send('{}, match_id must be an integer'.format(ctx.message.author.mention))
+				return 
+			else:
+				match_id = int(match_id)
+			msg = pgdb.return_active_bets(ctx.message.author.id,match_id)
+			await ctx.send('{}, {}'.format(ctx.message.author.mention,msg))
+	else:
+		await ctx.send('{}, for a particular match, use !active_bets match_id'.format(ctx.message.author.mention,msg))
+		
+@bot.command()
 async def bet(ctx,*arg):
-	if ctx.guild is not None and str(ctx.message.channel) != COMM_CHANNEL:
+	if ctx.guild and str(ctx.message.channel) != COMM_CHANNEL:
 		return
 	if len(arg) != 3:
 		await ctx.send('{}, try !bet match_id side amount'.format(ctx.message.author.mention))
@@ -337,11 +368,14 @@ async def bet(ctx,*arg):
 	else:
 		match_id = int(match_id)
 
-	if side.lower() not in ['radiant','dire']:
+	side = side.lower()
+	if side == 'radiant':
+		side = MATCH_STATUS.RADIANT
+	elif side == 'dire':
+		side = MATCH_STATUS.DIRE
+	else:
 		await ctx.send('{}, must enter side as either radiant or dire'.format(ctx.message.author.mention))
 		return
-	else:
-		side = side.lower()
 
 	if not amount.isdigit():
 		await ctx.send('{}, amount must be an integer'.format(ctx.message.author.mention))

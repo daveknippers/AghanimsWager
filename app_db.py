@@ -1,11 +1,14 @@
-import datetime
+import datetime, time
 
 import sqlalchemy as db
 from sqlalchemy import exc, text
+import pandas as pd
 
 import logging
 from enum import Enum, auto, IntEnum
 
+AUTOBET = 50
+HOUSE_BET = 500
 
 class MATCH_STATUS(IntEnum):
 	UNRESOLVED = auto()
@@ -27,15 +30,20 @@ class PGDB:
 		self.metadata = db.MetaData(schema='Kali')
 
 		self.bet_ledger = db.Table('bet_ledger', self.metadata,
+			db.Column('wager_id',db.Integer,primary_key=True),
 			db.Column('match_id',db.BigInteger,nullable=False),
 			db.Column('gambler_id',db.BigInteger,nullable=False),
-			db.Column('bet_side',db.String(7),nullable=False),
+			db.Column('side',db.Integer,nullable=False),
 			db.Column('amount',db.BigInteger,nullable=False),
-			db.Column('finalized',db.Integer,nullable=False))
+			db.Column('finalized',db.Boolean,nullable=False))
 
 		self.charity = db.Table('charity', self.metadata,
+			db.Column('charity_id',db.Integer,primary_key=True),
+			db.Column('wager_id',db.Integer,nullable=True),
 			db.Column('gambler_id',db.BigInteger,nullable=False),
-			db.Column('amount',db.BigInteger,nullable=False))
+			db.Column('amount',db.BigInteger,nullable=False),
+			db.Column('reason',db.String,nullable=False),
+			db.Column('query_time',db.BigInteger,nullable=False))
 
 		self.balance_ledger = db.Table('balance_ledger',self.metadata,
 			db.Column('discord_id',db.BigInteger,primary_key=True,nullable=False),
@@ -116,17 +124,6 @@ class PGDB:
 			print('Insert discord_id/steam_id failed for {} / {}, multiple results returned'.format(discord_id,steam_id))
 			return None
 
-	def update_match_status(self,match_id,status):
-		ms = self.match_status
-		update = ms.update().values(status = int(status)).where(ms.c.match_id == match_id)
-		result = self.conn.execute(update)
-		if result.rowcount != 1:
-			logging.warning('update match status returned {} results'.format(results.rowcount))
-
-	def insert_match_status(self,match_id):
-		ms = self.match_status
-		insert = ms.insert().values(match_id=match_id,status=int(MATCH_STATUS.UNRESOLVED))
-		result = self.conn.execute(insert)
 
 	def check_match_status(self,match_id):
 		ms = self.match_status
@@ -137,7 +134,7 @@ class PGDB:
 	def get_unresolved_matches(self):
 		q = '''SELECT DISTINCT lm.lobby_id
 FROM "Kali".match_status AS ms
-LEFT OUTER JOIN "Kali".live_matches as lm
+LEFT OUTER JOIN "Kali".live_matches AS lm
 ON lm.match_id = ms.match_id
 WHERE ms.status = 1'''
 		result = self.conn.execute(q).fetchall()
@@ -169,7 +166,7 @@ LOCK TABLE "Kali".friends IN ACCESS EXCLUSIVE MODE;'''
 		
 	def replace_live(self,lobbies):
 		begin_statement = '''BEGIN WORK;
-LOCK TABLE "Kali".live_lobbies IN ACCESS EXCLUSIVE MODE;'''
+	LOCK TABLE "Kali".live_lobbies IN ACCESS EXCLUSIVE MODE;'''
 		delete = str(self.live_lobbies.delete())+';'
 		end_statement = text('COMMIT WORK;')
 		lobby_template = text('INSERT INTO "Kali".live_lobbies VALUES (:lobby_id)')
@@ -238,7 +235,7 @@ LOCK TABLE "Kali".live_lobbies IN ACCESS EXCLUSIVE MODE;'''
 	def update_lp(self,players):
 		lp = self.live_players
 		begin_statement = '''BEGIN WORK;
-LOCK TABLE "Kali".live_players IN ACCESS EXCLUSIVE MODE;'''
+	LOCK TABLE "Kali".live_players IN ACCESS EXCLUSIVE MODE;'''
 		end_statement = text('COMMIT WORK;')
 		lp_template = text('UPDATE "Kali".live_players SET hero_id = (:hero_id) WHERE match_id = (:match_id) AND player_num = (:player_num) AND account_id = (:account_id);')
 		update_statements = []
@@ -299,52 +296,164 @@ LOCK TABLE "Kali".live_players IN ACCESS EXCLUSIVE MODE;'''
 			result = self.conn.execute(insert)
 			return 1000
 
+	def return_active_bets(self,discord_id=None,match_id=None):
+		bets = self.bet_ledger
+		if discord_id and match_id:
+			s = db.select([bets]).where(db.and_(bets.c.gambler_id == discord_id,
+							bets.c.match_id == match_id,
+							bets.c.finalized == False))
+		elif discord_id:
+			s = db.select([bets]).where(db.and_(bets.c.gambler_id == discord_id,
+							bets.c.finalized == False))
+
+		elif match_id:
+			s = db.select([bets]).where(db.and_(bets.c.gambler_id == match_id,
+							bets.c.finalized == False))
+		else:
+			s = db.select([bets]).where(bets.c.finalized == False)
+
+		result = self.conn.execute(s)
+		keys = result.keys()
+		if (result := result.fetchall()):
+			active_bets_df = pd.DataFrame(result,columns=keys)
+			msg = str(active_bets_df)
+			return msg
+		else:
+			return 'there are no active bets.'
+
+	def update_match_status(self,match_id,status):
+		ms = self.match_status
+		update = ms.update().values(status = int(status)).where(ms.c.match_id == match_id)
+		result = self.conn.execute(update)
+		if result.rowcount != 1:
+			logging.warning('update match status returned {} results'.format(results.rowcount))
+
+	def update_match_status(self,match_id,status):
+		if status == int(MATCH_STATUS.UNRESOLVED):
+			raise ValueError('cannot finalize unresolved match id {}'.format(match_id))
+		elif status == int(MATCH_STATUS.ERROR):
+			begin = '''BEGIN WORK;
+	LOCK TABLE "Kali".bet_ledger IN ACCESS EXCLUSIVE MODE;
+	LOCK TABLE "Kali".match_status IN ACCESS EXCLUSIVE MODE;
+	LOCK TABLE "Kali".charity IN ACCESS EXCLUSIVE MODE;'''
+			
+			
+		ms = self.match_status
+		result = self.conn.execute(update)
+		if result.rowcount != 1:
+			logging.warning('update match status returned {} results'.format(results.rowcount))
+
+	def insert_match_status(self,match_id,match_players):
+		query_time = int(time.mktime(datetime.datetime.now().timetuple()))
+		
+		statement = []
+
+		begin = '''BEGIN WORK;
+LOCK TABLE "Kali".bet_ledger IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE "Kali".match_status IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE "Kali".charity IN ACCESS EXCLUSIVE MODE;'''
+
+		statement.append(begin)
+	
+		insert_match_status = text('INSERT INTO "Kali".match_status VALUES (:match_id, :status)')
+		insert_match_status_sql = str(insert_match_status.bindparams(match_id = match_id,
+					 status = int(MATCH_STATUS.UNRESOLVED)).compile(compile_kwargs={"literal_binds": True}))+';'
+		
+		statement.append(insert_match_status_sql)
+		
+		for discord_id,side in match_players:
+			insert_bet = text('''INSERT INTO "Kali".bet_ledger (match_id, gambler_id, side, amount, finalized) 
+VALUES (:match_id, :gambler_id, :side, :amount, FALSE)''')
+			insert_free_bet_sql = str(insert_bet.bindparams(match_id = match_id,
+								gambler_id = discord_id, 
+								side = int(side), 
+								amount = AUTOBET).compile(compile_kwargs={"literal_binds": True}))+';'
+			
+			insert_charity = text('''INSERT INTO "Kali".charity (wager_id, gambler_id, amount, reason, query_time) 
+VALUES (currval(pg_get_serial_sequence('"Kali".bet_ledger', 'wager_id')), :gambler_id, :amount, :reason, :query_time)''')
+		
+			insert_charity_sql = str(insert_charity.bindparams(gambler_id = discord_id, 
+								amount = AUTOBET,
+								reason = 'free',
+								query_time = query_time).compile(compile_kwargs={"literal_binds": True}))+';'
+			
+			statement.append(insert_free_bet_sql)
+			statement.append(insert_charity_sql)
+			
+		insert_house_radiant_bet_sql = str(insert_bet.bindparams(match_id = match_id,
+							gambler_id = -int(MATCH_STATUS.RADIANT),
+							side = int(MATCH_STATUS.RADIANT),
+							amount = HOUSE_BET).compile(compile_kwargs={"literal_binds": True}))+';'
+
+		insert_charity_radiant_sql = str(insert_charity.bindparams(gambler_id = -2, 
+							amount = HOUSE_BET,
+							reason = 'house bet radiant',
+							query_time = query_time).compile(compile_kwargs={"literal_binds": True}))+';'
+
+		insert_house_dire_bet_sql = str(insert_bet.bindparams(match_id = match_id,
+							gambler_id = -int(MATCH_STATUS.DIRE),
+							side = int(MATCH_STATUS.DIRE),
+							amount = HOUSE_BET).compile(compile_kwargs={"literal_binds": True}))+';'
+
+		insert_charity_dire_sql = str(insert_charity.bindparams(gambler_id = -3, 
+							amount = HOUSE_BET,
+							reason = 'house bet dire',
+							query_time = query_time).compile(compile_kwargs={"literal_binds": True}))+';'
+		
+		end = 'COMMIT WORK;'
+
+		statement.append(insert_house_radiant_bet_sql)
+		statement.append(insert_charity_radiant_sql)
+		statement.append(insert_house_dire_bet_sql)
+		statement.append(insert_charity_dire_sql)
+		statement.append(end)
+		
+		statement = '\n'.join(statement)
+		print(statement)
+		self.conn.execute(statement)
+
+	def insert_bet_helper(self,match_id,discord_id,side,amount,new_balance):
+
+		query_time = int(time.mktime(datetime.datetime.now().timetuple()))
+		
+		begin = '''BEGIN WORK;
+LOCK TABLE "Kali".bet_ledger IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE "Kali".balance_ledger IN ACCESS EXCLUSIVE MODE;'''
+
+		update_balance = text('UPDATE "Kali".balance_ledger SET tokens = :tokens WHERE discord_id = :discord_id')
+
+		insert_bet = text('''INSERT INTO "Kali".bet_ledger (match_id, gambler_id, side, amount, finalized) 
+VALUES (:match_id, :gambler_id, :side, :amount, FALSE)''')
+
+		update_balance_sql = str(update_balance.bindparams(tokens = new_balance,
+										discord_id = discord_id).compile(compile_kwargs={"literal_binds": True}))+';'
+		
+		insert_bet_sql = str(insert_bet.bindparams(match_id = match_id,
+										gambler_id = discord_id, 
+										side = int(side), 
+										amount = amount).compile(compile_kwargs={"literal_binds": True}))+';'
+
+		end = 'COMMIT WORK;'
+		statement = '\n'.join(begin,update_balance_sql,insert_bet_sql,end)
+		print(statement)
+		self.conn.execute(statement)
+
 	def insert_bet(self,match_id,discord_id,side,amount):
+
 		balance = self.check_balance(discord_id)
 		if balance < amount:
-			return 'insufficent balance'
-		else:
-			new_balance = balance - amount
+			return 'insufficent balance.'
+		new_balance = balance - amount
 
-			bl = self.bet_ledger
-			s = db.select([bl.c.bet_side]).where(bl.c.match_id == match_id)
+		bl = self.bet_ledger
+		s = db.select([bl.c.side]).where(bl.c.match_id == match_id)
 
-			if (result := self.conn.execute(s).fetchall()):
-				if all(map(lambda y: y == side,map(lambda x: x[0],result))):
-					begin_statement = text('''BEGIN WORK;
-	LOCK TABLE "Kali".bet_ledger IN ACCESS EXCLUSIVE MODE;
-	LOCK TABLE "Kali".balance_ledger IN ACCESS EXCLUSIVE MODE;''')
-					bet_insert_template = text('INSERT INTO "Kali".bet_ledger VALUES (:match_id, :gambler_id, :side, :amount, 0)')
-					balance_update_template = text('UPDATE "Kali".balance_ledger SET tokens = :tokens WHERE discord_id = :discord_id')
-					end_statement = text('COMMIT WORK;')
-					insert_statement = str(bet_insert_template.bindparams(match_id = match_id,gambler_id = discord_id, side = side, amount = amount).compile(compile_kwargs={"literal_binds": True}))+';'
-					update_statement = str(balance_update_template.bindparams(tokens = new_balance,discord_id = discord_id).compile(compile_kwargs={"literal_binds": True}))+';'
-					raw_dogg_sql = '''{}
-{}
-{}
-{} '''
-					raw_dogg_sql = raw_dogg_sql.format(begin_statement,insert_statement,update_statement,end_statement)
-					print(raw_dogg_sql)
-					result = self.conn.execute(raw_dogg_sql)
-					return 'bet {} CURRENCY on {} win for match id {}'.format(amount,side,match_id)
-				else:
-					return 'cannot bet on both sides'
+		if (result := self.conn.execute(s).fetchall()):
+			if all(map(lambda y: y == side,map(lambda x: x[0],result))):
+				self.insert_bet_helper(match_id,discord_id,side,amount,new_balance)
+				return 'bet {} CURRENCY on {} win for match id {}.'.format(amount,side.name.lower().title(),match_id)
 			else:
-				begin_statement = text('''BEGIN WORK;
-LOCK TABLE "Kali".bet_ledger IN ACCESS EXCLUSIVE MODE;
-LOCK TABLE "Kali".balance_ledger IN ACCESS EXCLUSIVE MODE;''')
-				bet_insert_template = text('INSERT INTO "Kali".bet_ledger VALUES (:match_id, :gambler_id, :side, :amount, 0);')
-				balance_update_template = text('UPDATE "Kali".balance_ledger SET tokens = :tokens WHERE discord_id = :discord_id;')
-				end_statement = text('COMMIT WORK;')
-				insert_statement = str(bet_insert_template.bindparams(match_id = match_id,gambler_id = discord_id, side = side, amount = amount).compile(compile_kwargs={"literal_binds": True}))+';'
-				update_statement = str(balance_update_template.bindparams(tokens = new_balance,discord_id = discord_id).compile(compile_kwargs={"literal_binds": True}))+';'
-				raw_dogg_sql = '''{}
-{}
-{}
-{} '''
-				raw_dogg_sql = raw_dogg_sql.format(begin_statement,insert_statement,update_statement,end_statement)
-				print(raw_dogg_sql)
-				result = self.conn.execute(raw_dogg_sql)
-				return 'bet {} CURRENCY on {} win for match id {}'.format(amount,side,match_id)
-				
-
+				return 'cannot bet on both sides.'
+		else:
+			self.insert_bet_helper(match_id,discord_id,side,amount,new_balance)
+			return 'bet {} CURRENCY on {} win for match id {}.'.format(amount,side.name.lower().title(),match_id)
