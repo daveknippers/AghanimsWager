@@ -317,7 +317,7 @@ async def add_steam_id(ctx,*arg):
 
 @bot.command()
 async def hi(ctx,*arg):
-	if ctx.guild and str(ctx.message.channel) != COMM_CHANNEL:
+	if not ctx.guild or str(ctx.message.channel) == COMM_CHANNEL:
 		await ctx.send('{} ?'.format(ctx.message.author.mention))
 
 @bot.command()
