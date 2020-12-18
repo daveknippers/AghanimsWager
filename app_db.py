@@ -322,26 +322,102 @@ LOCK TABLE "Kali".friends IN ACCESS EXCLUSIVE MODE;'''
 			return 'there are no active bets.'
 
 	def update_match_status(self,match_id,status):
-		ms = self.match_status
-		update = ms.update().values(status = int(status)).where(ms.c.match_id == match_id)
-		result = self.conn.execute(update)
-		if result.rowcount != 1:
-			logging.warning('update match status returned {} results'.format(results.rowcount))
-
-	def update_match_status(self,match_id,status):
 		if status == int(MATCH_STATUS.UNRESOLVED):
 			raise ValueError('cannot finalize unresolved match id {}'.format(match_id))
-		elif status == int(MATCH_STATUS.ERROR):
-			begin = '''BEGIN WORK;
-	LOCK TABLE "Kali".bet_ledger IN ACCESS EXCLUSIVE MODE;
-	LOCK TABLE "Kali".match_status IN ACCESS EXCLUSIVE MODE;
-	LOCK TABLE "Kali".charity IN ACCESS EXCLUSIVE MODE;'''
-			
-			
-		ms = self.match_status
-		result = self.conn.execute(update)
-		if result.rowcount != 1:
-			logging.warning('update match status returned {} results'.format(results.rowcount))
+
+		statement = []
+
+		begin = '''BEGIN WORK;
+LOCK TABLE "Kali".bet_ledger IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE "Kali".balance_ledger IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE "Kali".match_status IN ACCESS EXCLUSIVE MODE;'''
+		statement.append(begin)
+
+		join_query = '''SELECT bl.gambler_id, bl.wager_id, bl.amount, bl.side FROM "Kali".bet_ledger bl
+INNER JOIN "Kali".charity ch
+ON bl.wager_id = ch.wager_id
+WHERE bl.match_id = {}
+AND bl.finalized = false'''.format(match_id)
+
+		update_wager = text('UPDATE "Kali".bet_ledger SET finalized = true WHERE wager_id = :wager_id')
+
+		if (result := self.conn.execute(join_query).fetchall()):
+			rows = []
+			for row in result:
+				update_wager_sql = str(update_wager.bindparams(wager_id = row.wager_id)
+										.compile(compile_kwargs={"literal_binds": True}))+';'
+				statement.append(update_wager_sql)
+				rows.append(row)
+			charity_bets_df = pd.DataFrame(rows,columns=['gambler_id','wager_id','amount','side'])
+		else:
+			print('No charity positions in wagers for match_id {}, marking match complete'.format(match_id))
+			ms = self.match_status
+			update = ms.update().values(status = int(status)).where(ms.c.match_id == match_id)
+			result = self.conn.execute(update)
+			return
+
+		bets_query = '''SELECT bl.gambler_id, bl.wager_id, bl.amount, bl.side FROM "Kali".bet_ledger AS bl
+WHERE bl.match_id = {}
+AND bl.finalized = false
+AND NOT EXISTS (SELECT FROM "Kali".charity AS ch WHERE bl.wager_id = ch.wager_id)'''.format(match_id)
+
+		if (result := self.conn.execute(bets_query,match_id).fetchall()):
+			rows = []
+			for row in result:
+				update_wager_sql = str(update_wager.bindparams(match_id = row.wager_id)
+										.compile(compile_kwargs={"literal_binds": True}))+';'
+				statement.append(update_wager_sql)
+				rows.append(row)
+			bets_df = pd.DataFrame(rows,columns=['gambler_id','wager_id','amount','side'])
+		else:
+			bets_df = None
+
+		if status == int(MATCH_STATUS.ERROR):
+			for (gambler_id,amount) in bets_df[['gambler_id','amount']].values:
+				update_balance = text('UPDATE "Kali".balance_ledger SET tokens = tokens + :tokens WHERE discord_id = :discord_id')
+				update_wager_sql = str(update_balance.bindparams(tokens = amount,
+											discord_id = gambler_id).compile(compile_kwargs={"literal_binds": True}))+';'
+				statement.append(update_wager_sql)
+		else:
+			radiant_pot = charity_bets_df.groupby(['side'])['amount'].agg('sum')[int(MATCH_STATUS.RADIANT)]
+			dire_pot = charity_bets_df.groupby(['side'])['amount'].agg('sum')[int(MATCH_STATUS.DIRE)]
+
+			if bets_df:
+				radiant_pot += bets_df.groupby(['side'])['amount'].agg('sum')[int(MATCH_STATUS.RADIANT)]
+				dire_pot += bets_df.groupby(['side'])['amount'].agg('sum')[int(MATCH_STATUS.DIRE)]
+
+			total_pot = radiant_pot+dire_pot
+
+			if bets_df:
+				for (gambler_id,amount,side) in bets_df[['gambler_id','amount','side']].values:
+					if status == side: 
+						if status == MATCH_STATUS.RADIANT:
+							new_amount = int(amount/radiant_pot*dire_pot + amount)
+						elif status == MATCH_STATUS.DIRE:
+							new_amount = int(amount/dire_pot*radiant_pot + amount)
+						update_balance = text('UPDATE "Kali".balance_ledger SET tokens = tokens + :tokens WHERE discord_id = :discord_id')
+						update_balance_sql = str(update_balance.bindparams(tokens = new_amount,
+													discord_id = int(gambler_id)).compile(compile_kwargs={"literal_binds": True}))+';'
+						statement.append(update_balance_sql)
+
+			for (gambler_id,amount,side) in charity_bets_df[['gambler_id','amount','side']].values:
+				if status == side: 
+					if status == MATCH_STATUS.RADIANT:
+						 new_amount = int(amount/radiant_pot*dire_pot)
+					elif status == MATCH_STATUS.DIRE:
+						 new_amount = int(amount/dire_pot*radiant_pot)
+					update_balance = text('UPDATE "Kali".balance_ledger SET tokens = tokens + :tokens WHERE discord_id = :discord_id')
+					update_balance_sql = str(update_balance.bindparams(tokens = new_amount, discord_id = int(gambler_id)).compile(compile_kwargs={"literal_binds": True}))+';'
+					statement.append(update_balance_sql)
+					
+		ms_update = text('UPDATE "Kali".match_status SET status = :status WHERE match_id = :match_id')
+		ms_update_sql = str(ms_update.bindparams(status = int(status), match_id = match_id).compile(compile_kwargs={"literal_binds": True}))+';'
+		statement.append(ms_update_sql)
+
+		statement.append('COMMIT WORK;')
+		statement = '\n'.join(statement)
+		print(statement)
+		self.conn.execute(statement)
 
 	def insert_match_status(self,match_id,match_players):
 		query_time = int(time.mktime(datetime.datetime.now().timetuple()))
@@ -362,6 +438,7 @@ LOCK TABLE "Kali".charity IN ACCESS EXCLUSIVE MODE;'''
 		statement.append(insert_match_status_sql)
 		
 		for discord_id,side in match_players:
+			self.check_balance(discord_id)
 			insert_bet = text('''INSERT INTO "Kali".bet_ledger (match_id, gambler_id, side, amount, finalized) 
 VALUES (:match_id, :gambler_id, :side, :amount, FALSE)''')
 			insert_free_bet_sql = str(insert_bet.bindparams(match_id = match_id,
@@ -446,7 +523,7 @@ VALUES (:match_id, :gambler_id, :side, :amount, FALSE)''')
 		new_balance = balance - amount
 
 		bl = self.bet_ledger
-		s = db.select([bl.c.side]).where(bl.c.match_id == match_id)
+		s = db.select([bl.c.side]).where(db.and_(bl.c.match_id == match_id,bl.c.gambler_id == discord_id))
 
 		if (result := self.conn.execute(s).fetchall()):
 			if all(map(lambda y: y == side,map(lambda x: x[0],result))):
