@@ -9,6 +9,8 @@ url_GetMatchDetails = 'https://api.steampowered.com/IDOTA2Match_570/GetMatchDeta
 
 def schuck_match_details(match_id):
 	json_match_details = request_match_details(match_id)
+	if not json_match_details:
+		return MATCH_STATUS.UNRESOLVED
 	result = json_match_details['result']
 	if 'error' in result:
 		print('Fetching {} failed: {}'.format(match_id,result['error']))
@@ -26,9 +28,7 @@ def schuck_match_details(match_id):
 		else:
 			return MATCH_STATUS.DIRE
 	else:
-		ts = int(time.mktime(datetime.datetime.now().timetuple()))
-		sts = str(ts)
-		json_file = 'match_details' + os.sep + str(match_id) + '.' + sts + '.json'
+		json_file = 'match_details' + os.sep + str(match_id) + '.json'
 		try:
 			with open(json_file, 'w') as f:
 				json.dump(json_match_details,f)
@@ -49,7 +49,8 @@ def request_match_details(match_id):
 	if status == 200:
 		return response.json()
 	else:
-		raise RuntimeError('request_match_details get return status: {}'.format(status))
+		print('request_match_details {} get return status: {}'.format(match_id,status))
+		return None
 
 if __name__ == '__main__':
 	schuck_match_details(5732005218)
