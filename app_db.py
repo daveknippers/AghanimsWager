@@ -7,6 +7,7 @@ import pandas as pd
 import logging
 from enum import Enum, auto, IntEnum
 
+NEW_PLAYER_STIPEND = 500
 AUTOBET = 50
 HOUSE_BET = 500
 
@@ -292,9 +293,9 @@ LOCK TABLE "Kali".friends IN ACCESS EXCLUSIVE MODE;'''
 		if (result := self.conn.execute(s).fetchone()):
 			return result[0]
 		else:
-			insert = self.balance_ledger.insert().values(discord_id=discord_id,tokens=1000)
+			insert = self.balance_ledger.insert().values(discord_id=discord_id,tokens=NEW_PLAYER_STIPEND)
 			result = self.conn.execute(insert)
-			return 1000
+			return NEW_PLAYER_STIPEND
 
 	def return_active_bets(self,discord_id=None,match_id=None):
 		bets = self.bet_ledger
@@ -325,10 +326,12 @@ LOCK TABLE "Kali".friends IN ACCESS EXCLUSIVE MODE;'''
 		if status == int(MATCH_STATUS.UNRESOLVED):
 			raise ValueError('cannot finalize unresolved match id {}'.format(match_id))
 
+		query_time = int(time.mktime(datetime.datetime.now().timetuple()))
 		statement = []
 
 		begin = '''BEGIN WORK;
 LOCK TABLE "Kali".bet_ledger IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE "Kali".charity IN ACCESS EXCLUSIVE MODE;
 LOCK TABLE "Kali".balance_ledger IN ACCESS EXCLUSIVE MODE;
 LOCK TABLE "Kali".match_status IN ACCESS EXCLUSIVE MODE;'''
 		statement.append(begin)
@@ -364,7 +367,7 @@ AND NOT EXISTS (SELECT FROM "Kali".charity AS ch WHERE bl.wager_id = ch.wager_id
 		if (result := self.conn.execute(bets_query,match_id).fetchall()):
 			rows = []
 			for row in result:
-				update_wager_sql = str(update_wager.bindparams(match_id = row.wager_id)
+				update_wager_sql = str(update_wager.bindparams(wager_id = row.wager_id)
 										.compile(compile_kwargs={"literal_binds": True}))+';'
 				statement.append(update_wager_sql)
 				rows.append(row)
@@ -372,23 +375,68 @@ AND NOT EXISTS (SELECT FROM "Kali".charity AS ch WHERE bl.wager_id = ch.wager_id
 		else:
 			bets_df = None
 
+
 		if status == int(MATCH_STATUS.ERROR):
 			for (gambler_id,amount) in bets_df[['gambler_id','amount']].values:
 				update_balance = text('UPDATE "Kali".balance_ledger SET tokens = tokens + :tokens WHERE discord_id = :discord_id')
-				update_wager_sql = str(update_balance.bindparams(tokens = amount,
-											discord_id = gambler_id).compile(compile_kwargs={"literal_binds": True}))+';'
+				update_wager_sql = str(update_balance.bindparams(tokens = int(amount),
+											discord_id = int(gambler_id)).compile(compile_kwargs={"literal_binds": True}))+';'
 				statement.append(update_wager_sql)
 		else:
-			radiant_pot = charity_bets_df.groupby(['side'])['amount'].agg('sum')[int(MATCH_STATUS.RADIANT)]
-			dire_pot = charity_bets_df.groupby(['side'])['amount'].agg('sum')[int(MATCH_STATUS.DIRE)]
+			try:
+				radiant_pot = charity_bets_df.groupby(['side'])['amount'].agg('sum')[int(MATCH_STATUS.RADIANT)]
+			except KeyError:
+				radiant_pot = 0
+			try:
+				dire_pot = charity_bets_df.groupby(['side'])['amount'].agg('sum')[int(MATCH_STATUS.DIRE)]
+			except KeyError:
+				dire_pot = 0
 
-			if bets_df:
-				radiant_pot += bets_df.groupby(['side'])['amount'].agg('sum')[int(MATCH_STATUS.RADIANT)]
-				dire_pot += bets_df.groupby(['side'])['amount'].agg('sum')[int(MATCH_STATUS.DIRE)]
+			if bets_df is not None:
+				try:
+					radiant_pot += bets_df.groupby(['side'])['amount'].agg('sum')[int(MATCH_STATUS.RADIANT)]
+				except KeyError:
+					pass
+				try:
+					dire_pot += bets_df.groupby(['side'])['amount'].agg('sum')[int(MATCH_STATUS.DIRE)]
+				except KeyError:
+					pass
+
+			insert_bet = text('''INSERT INTO "Kali".bet_ledger (match_id, gambler_id, side, amount, finalized) 
+VALUES (:match_id, :gambler_id, :side, :amount, TRUE)''')
+			insert_charity = text('''INSERT INTO "Kali".charity (wager_id, gambler_id, amount, reason, query_time) 
+VALUES (currval(pg_get_serial_sequence('"Kali".bet_ledger', 'wager_id')), :gambler_id, :amount, :reason, :query_time)''')
+
+			if dire_pot > radiant_pot:
+				charity_radiant_amount = dire_pot - radiant_pot
+				radiant_pot += charity_radiant_amount
+				insert_house_bet_sql = str(insert_bet.bindparams(match_id = match_id,
+									gambler_id = -int(MATCH_STATUS.RADIANT),
+									side = int(MATCH_STATUS.RADIANT),
+									amount = int(charity_radiant_amount)).compile(compile_kwargs={"literal_binds": True}))+';'
+				insert_charity_radiant_sql = str(insert_charity.bindparams(gambler_id = -2, 
+								amount = int(charity_radiant_amount),
+								reason = 'equalizing radiant',
+								query_time = query_time).compile(compile_kwargs={"literal_binds": True}))+';'
+				statement.append(insert_house_bet_sql)
+				statement.append(insert_charity_radiant_sql)
+			elif radiant_pot > dire_pot:
+				charity_dire_amount = radiant_pot - dire_pot
+				dire_pot += charity_dire_amount
+				insert_house_bet_sql = str(insert_bet.bindparams(match_id = match_id,
+									gambler_id = -int(MATCH_STATUS.DIRE),
+									side = int(MATCH_STATUS.DIRE),
+									amount = int(charity_dire_amount)).compile(compile_kwargs={"literal_binds": True}))+';'
+				insert_charity_dire_sql = str(insert_charity.bindparams(gambler_id = -3, 
+								amount = int(charity_dire_amount),
+								reason = 'equalizing dire',
+								query_time = query_time).compile(compile_kwargs={"literal_binds": True}))+';'
+				statement.append(insert_house_bet_sql)
+				statement.append(insert_charity_dire_sql)
 
 			total_pot = radiant_pot+dire_pot
 
-			if bets_df:
+			if bets_df is not None:
 				for (gambler_id,amount,side) in bets_df[['gambler_id','amount','side']].values:
 					if status == side: 
 						if status == MATCH_STATUS.RADIANT:
@@ -436,6 +484,9 @@ LOCK TABLE "Kali".charity IN ACCESS EXCLUSIVE MODE;'''
 					 status = int(MATCH_STATUS.UNRESOLVED)).compile(compile_kwargs={"literal_binds": True}))+';'
 		
 		statement.append(insert_match_status_sql)
+
+		insert_charity = text('''INSERT INTO "Kali".charity (wager_id, gambler_id, amount, reason, query_time) 
+VALUES (currval(pg_get_serial_sequence('"Kali".bet_ledger', 'wager_id')), :gambler_id, :amount, :reason, :query_time)''')
 		
 		for discord_id,side in match_players:
 			self.check_balance(discord_id)
@@ -446,8 +497,6 @@ VALUES (:match_id, :gambler_id, :side, :amount, FALSE)''')
 								side = int(side), 
 								amount = AUTOBET).compile(compile_kwargs={"literal_binds": True}))+';'
 			
-			insert_charity = text('''INSERT INTO "Kali".charity (wager_id, gambler_id, amount, reason, query_time) 
-VALUES (currval(pg_get_serial_sequence('"Kali".bet_ledger', 'wager_id')), :gambler_id, :amount, :reason, :query_time)''')
 		
 			insert_charity_sql = str(insert_charity.bindparams(gambler_id = discord_id, 
 								amount = AUTOBET,
@@ -457,6 +506,7 @@ VALUES (currval(pg_get_serial_sequence('"Kali".bet_ledger', 'wager_id')), :gambl
 			statement.append(insert_free_bet_sql)
 			statement.append(insert_charity_sql)
 			
+		'''
 		insert_house_radiant_bet_sql = str(insert_bet.bindparams(match_id = match_id,
 							gambler_id = -int(MATCH_STATUS.RADIANT),
 							side = int(MATCH_STATUS.RADIANT),
@@ -476,13 +526,15 @@ VALUES (currval(pg_get_serial_sequence('"Kali".bet_ledger', 'wager_id')), :gambl
 							amount = HOUSE_BET,
 							reason = 'house bet dire',
 							query_time = query_time).compile(compile_kwargs={"literal_binds": True}))+';'
-		
-		end = 'COMMIT WORK;'
 
 		statement.append(insert_house_radiant_bet_sql)
 		statement.append(insert_charity_radiant_sql)
 		statement.append(insert_house_dire_bet_sql)
 		statement.append(insert_charity_dire_sql)
+		'''
+		
+		end = 'COMMIT WORK;'
+
 		statement.append(end)
 		
 		statement = '\n'.join(statement)
@@ -492,10 +544,12 @@ VALUES (currval(pg_get_serial_sequence('"Kali".bet_ledger', 'wager_id')), :gambl
 	def insert_bet_helper(self,match_id,discord_id,side,amount,new_balance):
 
 		query_time = int(time.mktime(datetime.datetime.now().timetuple()))
+		statement = []
 		
 		begin = '''BEGIN WORK;
 LOCK TABLE "Kali".bet_ledger IN ACCESS EXCLUSIVE MODE;
 LOCK TABLE "Kali".balance_ledger IN ACCESS EXCLUSIVE MODE;'''
+		statement.append(begin)
 
 		update_balance = text('UPDATE "Kali".balance_ledger SET tokens = :tokens WHERE discord_id = :discord_id')
 
@@ -509,9 +563,12 @@ VALUES (:match_id, :gambler_id, :side, :amount, FALSE)''')
 										gambler_id = discord_id, 
 										side = int(side), 
 										amount = amount).compile(compile_kwargs={"literal_binds": True}))+';'
-
+		statement.append(update_balance_sql)
+		statement.append(insert_bet_sql)
 		end = 'COMMIT WORK;'
-		statement = '\n'.join(begin,update_balance_sql,insert_bet_sql,end)
+		statement.append(end)
+
+		statement = '\n'.join(statement)
 		print(statement)
 		self.conn.execute(statement)
 
