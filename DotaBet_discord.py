@@ -22,7 +22,7 @@ SUPERUSER_ID = 148293973331542017
 # things to do: add a auto balance check for discord ids -2 and -3
 
 GAMBLING_CLOSE_WAIT = 120
-RESTART_LAST_CHANCE = 2000
+RESTART_LAST_CHANCE = 250
 
 CURRENCY = 'golden salt'
 INFO_CHANNEL = 'dota-bet-info'
