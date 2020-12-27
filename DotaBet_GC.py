@@ -67,6 +67,8 @@ def investigate_ClientPersonaState(msg):
 					try:
 						if f.rich_presence['param0'] == '#DOTA_lobby_type_name_lobby':
 							continue
+						if f.rich_presence['param0'] == '#game_mode_18':
+							continue
 					except KeyError:
 						continue
 					if status == '#DOTA_RP_PLAYING_AS':

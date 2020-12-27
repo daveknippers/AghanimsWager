@@ -162,7 +162,7 @@ Building State: {building_state}'''
 			print('cannot announce winner with non-existent lobby_id {}'.format(self.lobby_id))
 		
 class Lobby:
-	player_msg_template = '{hero_name} {discord_name}'.format
+	player_msg_template = '{hero_name} {discord_display}'.format
 
 	def __init__(self,lobby_id,channel,friend_df,client):
 		self.lobby_id = lobby_id
@@ -222,11 +222,13 @@ class Lobby:
 		if init_match_status:
 			pgdb.insert_match_status(self.match_id,player_df[['discord_id','side']].dropna().values)
 
-		player_df['discord_name'] = player_df['discord_name'].fillna('')
+		player_df['discord_display'] = player_df['discord_display'].fillna('')
 
 		player_msg = player_df.apply(lambda x: Lobby.player_msg_template(**x),1)
 
 		await self.match_obj.update(match_details,player_msg.values,pick_phase)
+
+
 
 class BookKeeper(commands.Bot):
 	def __init__(self, *args, **kwargs):
@@ -258,8 +260,8 @@ class BookKeeper(commands.Bot):
 		for index,row in self.friend_df.iterrows():
 			self.discord_mapping[row['discord_id']] = await self.fetch_user(row['discord_id'])
 
-		self.friend_df['discord_name'] = self.friend_df['discord_id'].apply(lambda x: '| ' + self.discord_mapping[x].name)
-		print(self.friend_df['discord_name'])
+		self.friend_df['discord_name'] = self.friend_df['discord_id'].apply(lambda x: self.discord_mapping[x].name)
+		self.friend_df['discord_display'] = self.friend_df['discord_id'].apply(lambda x: '| ' + self.discord_mapping[x].name)
 
 		active_lobbies = set(map(lambda x: x[0],pgdb.get_unresolved_matches()))
 		for lobby_id in active_lobbies:
@@ -331,28 +333,72 @@ async def balance(ctx,*arg):
 		msg = '{0.author.mention}, you have {1} {2}'.format(ctx.message,amount,CURRENCY)
 	await ctx.send(msg)
 
+
+MAX_MSG_LEN = 2000-6
+def format_long(msg):
+	while len(msg) > MAX_MSG_LEN:
+		split,msg = msg[:MAX_MSG_LEN],msg[MAX_MSG_LEN:]
+		chunk_lines = split.split('\n')
+		for i in range(len(chunk_lines)-1,0,-1):
+			guess = '\n'.join(chunk_lines[:i])
+			if len(guess) <= MAX_MSG_LEN:
+				yield '```'+guess+'```'
+				remainder = '\n'.join(chunk_lines[i:])
+				msg = remainder + msg
+				break
+	yield '```'+msg+'```'
+
+@bot.command()
+async def leaderboard(ctx,*arg):
+	if ctx.guild and str(ctx.message.channel) != COMM_CHANNEL:
+		return
+
+	db_result = pgdb.leaderboard()
+	agg = []
+	for i,(discord_id,amount) in enumerate(db_result):
+		try:
+			user = bot.discord_mapping[discord_id]
+		except KeyError:
+			bot.discord_mapping[discord_id] = await bot.fetch_user(discord_id)
+			user = bot.discord_mapping[discord_id]
+
+		agg.append('{:5d} {:12d} | {}'.format(i+1,amount,user.name))
+
+	for msg in format_long('\n'.join(agg)):
+		await ctx.send(msg)
+
 @bot.command()
 async def active_bets(ctx,*arg):
 	if ctx.guild and str(ctx.message.channel) != COMM_CHANNEL:
 		return
-	if len(arg) == 0:
-		msg = pgdb.return_active_bets(ctx.message.author.id)
-		await ctx.send('{}, {}'.format(ctx.message.author.mention,msg))
-	elif len(arg) == 1:
-		if arg[0] == 'all' and ctx.message.author.id == SUPERUSER_ID:
-			msg = pgdb.return_active_bets()
-			await ctx.send('{}, {}'.format(ctx.message.author.mention,msg))
+	if len(arg) == 1:
+		match_id = arg[0]
+		if not match_id.isdigit():
+			await ctx.send('{}, match_id must be an integer'.format(ctx.message.author.mention))
+			return 
 		else:
-			match_id = arg[0]
-			if not match_id.isdigit():
-				await ctx.send('{}, match_id must be an integer'.format(ctx.message.author.mention))
-				return 
-			else:
-				match_id = int(match_id)
-			msg = pgdb.return_active_bets(ctx.message.author.id,match_id)
-			await ctx.send('{}, {}'.format(ctx.message.author.mention,msg))
+			match_id = int(match_id)
+		active_bets_df = pgdb.return_active_bets(match_id=match_id)
 	else:
-		await ctx.send('{}, for a particular match, use !active_bets match_id'.format(ctx.message.author.mention,msg))
+		active_bets_df = pgdb.return_active_bets()
+
+	if active_bets_df is not None and len(active_bets_df) > 0:
+
+		active_bets_df = pd.merge(active_bets_df,bot.friend_df,how='left',left_on=['gambler_id'],right_on=['discord_id'])
+		active_bets_df['side_str'] = active_bets_df['side'].apply(lambda x: 'Radiant' if x == MATCH_STATUS.RADIANT else 'Dire')
+		active_bets_df['amount_str'] = active_bets_df['amount'].apply(lambda x: str(x))
+		active_bets_df['match_id_str'] = active_bets_df['match_id'].apply(lambda x: str(x))
+
+		acc = []
+		for match_id,discord_name,side,amount in active_bets_df[['match_id_str','side_str','amount_str','discord_name']].values:
+			acc.append('{} | {} | {} | {}'.format(match_id,side,discord_name,amount))
+
+		for msg in format_long('\n'.join(acc)):
+			await ctx.send(msg)
+	else:
+		await ctx.send('{}, there are no active bets'.format(ctx.message.author.mention))
+
+			
 		
 @bot.command()
 async def bet(ctx,*arg):
