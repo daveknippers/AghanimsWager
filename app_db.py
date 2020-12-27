@@ -377,11 +377,12 @@ AND NOT EXISTS (SELECT FROM "Kali".charity AS ch WHERE bl.wager_id = ch.wager_id
 
 
 		if status == int(MATCH_STATUS.ERROR):
-			for (gambler_id,amount) in bets_df[['gambler_id','amount']].values:
-				update_balance = text('UPDATE "Kali".balance_ledger SET tokens = tokens + :tokens WHERE discord_id = :discord_id')
-				update_wager_sql = str(update_balance.bindparams(tokens = int(amount),
-											discord_id = int(gambler_id)).compile(compile_kwargs={"literal_binds": True}))+';'
-				statement.append(update_wager_sql)
+			if bets_df != None:
+				for (gambler_id,amount) in bets_df[['gambler_id','amount']].values:
+					update_balance = text('UPDATE "Kali".balance_ledger SET tokens = tokens + :tokens WHERE discord_id = :discord_id')
+					update_wager_sql = str(update_balance.bindparams(tokens = int(amount),
+												discord_id = int(gambler_id)).compile(compile_kwargs={"literal_binds": True}))+';'
+					statement.append(update_wager_sql)
 		else:
 			try:
 				radiant_pot = charity_bets_df.groupby(['side'])['amount'].agg('sum')[int(MATCH_STATUS.RADIANT)]
