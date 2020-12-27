@@ -1,7 +1,7 @@
 import datetime, time
 
 import sqlalchemy as db
-from sqlalchemy import exc, text
+from sqlalchemy import exc, text, desc
 import pandas as pd
 
 import logging
@@ -288,6 +288,12 @@ LOCK TABLE "Kali".friends IN ACCESS EXCLUSIVE MODE;'''
 			result = self.conn.execute(insert)
 			return True
 
+	def leaderboard(self):
+		bl = self.balance_ledger
+		s = db.select([bl.c.discord_id,bl.c.tokens]).where(bl.c.discord_id > 0).order_by(desc(bl.c.tokens))
+		return self.conn.execute(s).fetchall()
+
+
 	def check_balance(self,discord_id):
 		s = db.select([self.balance_ledger.c.tokens]).where(self.balance_ledger.c.discord_id == discord_id)
 		if (result := self.conn.execute(s).fetchone()):
@@ -308,7 +314,7 @@ LOCK TABLE "Kali".friends IN ACCESS EXCLUSIVE MODE;'''
 							bets.c.finalized == False))
 
 		elif match_id:
-			s = db.select([bets]).where(db.and_(bets.c.gambler_id == match_id,
+			s = db.select([bets]).where(db.and_(bets.c.match_id == match_id,
 							bets.c.finalized == False))
 		else:
 			s = db.select([bets]).where(bets.c.finalized == False)
@@ -317,10 +323,9 @@ LOCK TABLE "Kali".friends IN ACCESS EXCLUSIVE MODE;'''
 		keys = result.keys()
 		if (result := result.fetchall()):
 			active_bets_df = pd.DataFrame(result,columns=keys)
-			msg = str(active_bets_df)
-			return msg
+			return active_bets_df
 		else:
-			return 'there are no active bets.'
+			return None
 
 	def update_match_status(self,match_id,status):
 		if status == int(MATCH_STATUS.UNRESOLVED):
