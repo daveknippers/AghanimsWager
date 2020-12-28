@@ -24,6 +24,8 @@ SUPERUSER_ID = 148293973331542017
 GAMBLING_CLOSE_WAIT = 120
 RESTART_LAST_CHANCE = 250
 
+LONGEST_HERO_NAME = None
+
 CURRENCY = 'golden salt'
 INFO_CHANNEL = 'dota-bet-info'
 COMM_CHANNEL = 'dota-bet'
@@ -34,6 +36,11 @@ with open('heroes.json') as f:
 	hero_data = json.load(f)
 	hero_data = dict(map(lambda x: (x['id'],(x['name'],x['localized_name'])),hero_data['heroes']))
 	hero_data[0] = ('null','null')
+	LONGEST_HERO_NAME = max(map(len,map(lambda x: x[1],hero_data.values())))
+	LOCALIZED_STATUS = dict([(MATCH_STATUS.UNRESOLVED,'Match In Progress'),
+							(MATCH_STATUS.RADIANT,'Radiant'),
+							(MATCH_STATUS.DIRE,'Dire'),
+							(MATCH_STATUS.ERROR,'Error parsing match result')])
 
 def convert_steam_to_account(steam_id):
 	id_str = str(steam_id)
@@ -45,22 +52,28 @@ def convert_steam_to_account(steam_id):
 
 class MatchMsg:
 
-	players_msg_template = '''=========== Radiant ==========
-------------------------------
+	players_only_msg_template = '''```New match id: {match_id}
+{players_only_msg}
+{gambling_status}
+
+!bet {match_id} [radiant/dire] amount```'''
+
+	players_msg_template = '''========= Radiant =========
+---------------------------
 --\t{0}
 --\t{1}
 --\t{2}
 --\t{3}
 --\t{4}
-------------------------------
-=========== Dire =============
-------------------------------
+---------------------------
+========= Dire ============
+---------------------------
 --\t{5}
 --\t{6}
 --\t{7}
 --\t{8}
 --\t{9}
-------------------------------\n'''
+---------------------------\n'''
 
 	match_msg_template_1 = '```Match ID: {match_id}\n'
 	match_msg_template_2 = '''Game Time: {game_time}
@@ -70,13 +83,18 @@ Radiant Score: {radiant_score}
 Dire Score: {dire_score}
 Building State: {building_state}'''
 
-	def __init__(self,channel,lobby_id):
-		self.channel = channel
+	def __init__(self,info_channel,comm_channel,lobby_id):
+		self.info_channel = info_channel
+		self.comm_channel = comm_channel
 		self.lobby_id = lobby_id
 
 		self.match_msg = None
 		self.match_msg_obj = None
 		self.match_msg_id = None
+
+		self.announce_msg = None
+		self.announce_msg_obj = None
+		self.announce_msg_id = None
 
 		self.winner = MATCH_STATUS.UNRESOLVED
 		self.gambling_close = None
@@ -85,26 +103,25 @@ Building State: {building_state}'''
 	async def init_msg_objs(self):
 		if self.match_msg_obj == None:	
 			if (match_msg_id := pgdb.select_match_message(self.lobby_id)):
-				print('using match_msg_id {} for lobby {}'.format(self.match_msg_id,self.lobby_id))
+				print('using match_msg_id {} for lobby {}'.format(match_msg_id[0][0],self.lobby_id))
 				self.match_msg_id = match_msg_id[0][0]
-				self.match_msg_obj = await self.channel.fetch_message(self.match_msg_id)
+				self.match_msg_obj = await self.info_channel.fetch_message(self.match_msg_id)
 				self.match_msg = self.match_msg_obj.content
+		if self.announce_msg_obj == None:
+			if (announce_msg_id := pgdb.select_announce_message(self.lobby_id)):
+				self.announce_msg_id = announce_msg_id[0][0]
+				self.announce_msg_obj = await self.comm_channel.fetch_message(self.announce_msg_id)
+				self.announce_msg = self.announce_msg_obj.content
 
-	async def update(self, match_details, players_msgs, pick_phase):
+	async def update(self, match_details, players_msgs, players_only_msgs, pick_phase):
 		match_msg_1 = MatchMsg.match_msg_template_1.format(**match_details)
 		match_msg_2 = MatchMsg.match_msg_template_2.format(**match_details)
 		players_msg = MatchMsg.players_msg_template.format(*players_msgs)
-		
+
 		match_msg = match_msg_1+players_msg+match_msg_2
 
-		if self.winner == MATCH_STATUS.UNRESOLVED:
-			winning_side = 'Match In Progress'
-		elif self.winner == MATCH_STATUS.RADIANT:
-			winning_side = 'Radiant'
-		elif self.winner == MATCH_STATUS.DIRE:
-			winning_side = 'Dire'
-		elif self.winner == MATCH_STATUS.ERROR:
-			winning_side = 'Error parsing match result'
+		winning_side = LOCALIZED_STATUS[self.winner]
+
 		match_msg += '\nMatch Winner: {}'.format(winning_side)
 
 		self.gambling_initialized = True
@@ -120,7 +137,7 @@ Building State: {building_state}'''
 				self.gambling_message = 'Bets are closing in ~{} second(s)'.format(GAMBLING_CLOSE_WAIT)
 		elif not pick_phase:
 			current_time = int(time.mktime(datetime.datetime.now().timetuple()))
-			if current_time > self.gambling_close:
+			if current_time > self.gambling_close or self.winner != MATCH_STATUS.UNRESOLVED:
 				self.gambling_message = 'Bets are closed'
 			else:
 				remaining = self.gambling_close - current_time
@@ -129,7 +146,7 @@ Building State: {building_state}'''
 		match_msg += '\n\n'+self.gambling_message+'```'
 
 		if self.match_msg_obj == None:
-			self.match_msg_obj = await self.channel.send(match_msg)
+			self.match_msg_obj = await self.info_channel.send(match_msg)
 			self.match_msg = match_msg
 			self.match_msg_id = self.match_msg_obj.id
 			print('new match_msg_id {} for lobby {}'.format(self.match_msg_id,self.lobby_id))
@@ -142,6 +159,26 @@ Building State: {building_state}'''
 			else:
 				print('no update for match_msg_id {}'.format(self.match_msg_id,self.lobby_id))
 
+		announce_msg = '\n'.join(players_only_msgs)
+		announce_msg = MatchMsg.players_only_msg_template.format(match_id=match_details['match_id'],
+									players_only_msg=announce_msg,
+									gambling_status=self.gambling_message)
+
+		if self.announce_msg_obj == None:	
+			self.announce_msg_obj = await self.comm_channel.send(announce_msg)
+			self.announce_msg = announce_msg
+			self.announce_msg_id = self.announce_msg_obj.id
+			print('new announce_msg_id {} for lobby {}'.format(self.announce_msg_id,self.lobby_id))
+			pgdb.insert_announce_message(self.lobby_id,self.announce_msg_id)
+
+		else:
+			if self.announce_msg != announce_msg:
+				await self.announce_msg_obj.edit(content=announce_msg)
+				print('edited announce_msg {}'.format(self.announce_msg_id))
+				self.announce_msg = announce_msg
+			else:
+				print('no update for announce_msg_id {}'.format(self.announce_msg_id,self.lobby_id))
+			
 	async def announce_winner(self,winner):
 		if winner == MATCH_STATUS.RADIANT:
 			w = 'Radiant'
@@ -160,18 +197,23 @@ Building State: {building_state}'''
 			print('edited match_msg {}'.format(self.match_msg_id))
 		else:
 			print('cannot announce winner with non-existent lobby_id {}'.format(self.lobby_id))
+
+	async def oneshot_message():
+		pass
 		
 class Lobby:
-	player_msg_template = '{hero_name} {discord_display}'.format
+	player_msg_template = '{{hero_name:{}}} | {{discord_name}}'.format(LONGEST_HERO_NAME)
 
-	def __init__(self,lobby_id,channel,friend_df,client):
+	def __init__(self,lobby_id,info_channel,comm_channel,friend_df,client):
 		self.lobby_id = lobby_id
 		self.friend_df = friend_df
 		self.client = client
 		self.match_id = None
 		self.last_update = None
 
-		self.match_obj = MatchMsg(channel,lobby_id)
+		self.comm_channel = comm_channel
+
+		self.match_obj = MatchMsg(info_channel,comm_channel,lobby_id)
 
 	async def check_match_details(self):
 		print('checking match details for {}'.format(self.match_id))
@@ -182,7 +224,45 @@ class Lobby:
 		else:
 			print('match id {} winner is {}'.format(self.match_id,status))
 			await self.match_obj.announce_winner(status)
-			pgdb.update_match_status(self.match_id,status)
+			bets_df,charity_df = pgdb.update_match_status(self.match_id,status)
+
+			if status == MATCH_STATUS.ERROR:
+				if bets_df == None or bets_df.empty:
+					msg = '```Cancelled match id: {match_id}```'.format(self.match_id)
+					await self.comm_channel.send(msg)
+				else:
+					msgs = ['Cancelled match id: {match_id}'.format(self.match_id)]
+					msgs.append('Bets Returned:')
+					for (gambler_id,amount,side) in bets_df[['gambler_id','amount','side']].values:
+						user = await self.client.cached_user(gambler_id)
+						msgs.append('{:12d} | {}'.format(amount,user.name))
+
+					for msg in format_long('\n'.join(msgs)):
+						await self.comm_channel.send(msg)
+
+			else:
+				msgs = ['Match {} complete. Winner: {}'.format(self.match_id,LOCALIZED_STATUS[status])]
+				winners = []
+				losers = []
+				for (gambler_id,amount,side) in bets_df[['gambler_id','amount','side']].values:
+					user = await self.client.cached_user(gambler_id)
+					if status == side:
+						winners.append('WINNER: {:12d} | {}'.format(amount,user.name))
+					else:
+						losers.append(' LOSER: {:12d} | {}'.format(amount,user.name))
+
+				for (gambler_id,amount,side) in charity_df[['gambler_id','amount','side']].values:
+					user = await self.client.cached_user(gambler_id)
+					if status == side:
+						winners.append('WINNER: {:12d} | {}'.format(amount,user.name))
+					else:
+						losers.append(' LOSER: {:12d} | {}'.format(amount,user.name))
+
+				msgs.extend(winners)
+				msgs.extend(losers)
+
+				for msg in format_long('\n'.join(msgs)):
+					await self.comm_channel.send(msg)
 
 	async def announce(self):
 		db_result,columns = pgdb.select_lm(self.lobby_id,self.last_update)
@@ -218,15 +298,24 @@ class Lobby:
 		player_df.sort_values(by=['player_num'],inplace=True)
 		player_df['hero_name'] = player_df['hero_id'].apply(lambda x: hero_data[x][1])
 		player_df['side'] = player_df['player_num'].apply(lambda x: int(MATCH_STATUS.RADIANT) if x < 5 else int(MATCH_STATUS.DIRE))
+		player_df['side_str'] = player_df['player_num'].apply(lambda x: 'Radiant' if x < 5 else 'Dire')
 
 		if init_match_status:
 			pgdb.insert_match_status(self.match_id,player_df[['discord_id','side']].dropna().values)
 
-		player_df['discord_display'] = player_df['discord_display'].fillna('')
+		if pick_phase:
+			players_only_msg_template = '{side_str:7} | {discord_name}'
+		else:
+			players_only_msg_template = '{{side_str:7}} | {{hero_name:{}}} | {{discord_name}}'.format(LONGEST_HERO_NAME)
 
-		player_msg = player_df.apply(lambda x: Lobby.player_msg_template(**x),1)
+		players_only_df = player_df.dropna(subset=['discord_name'])
+		players_only_msg = players_only_df.apply(lambda x: players_only_msg_template.format(**x),1)
 
-		await self.match_obj.update(match_details,player_msg.values,pick_phase)
+		player_df['discord_name'] = player_df['discord_name'].fillna('')
+
+		player_msg = player_df.apply(lambda x: Lobby.player_msg_template.format(**x),1)
+
+		await self.match_obj.update(match_details,player_msg.values,players_only_msg.values,pick_phase)
 
 
 
@@ -238,18 +327,28 @@ class BookKeeper(commands.Bot):
 		self.match_id_to_lobby = {}
 		self.waiting_on = set()
 
-		self.channel = None
+		self.info_channel = None
+		self.comm_channel = None
 		self.friend_df = None
 
 		self.discord_mapping = {}
 
 		self.lobby_listener = self.loop.create_task(self.check_lobbies_loop())
 
+	async def cached_user(self,discord_id):
+		try:
+			user = self.discord_mapping[discord_id]
+		except KeyError:
+			user = await self.fetch_user(discord_id)
+			self.discord_mapping[discord_id] = user
+		return user
+
 	async def check_lobbies_loop(self):
 		await self.wait_until_ready()
 		print('Logged in as',self.user.name,self.user.id)
 
-		self.channel = discord.utils.get(self.get_all_channels(), name=INFO_CHANNEL)
+		self.info_channel = discord.utils.get(self.get_all_channels(), name=INFO_CHANNEL)
+		self.comm_channel = discord.utils.get(self.get_all_channels(), name=COMM_CHANNEL)
 
 		discord_id_df = pd.DataFrame(pgdb.select_discord_ids(),columns=['discord_id','steam_id'],dtype=pd.Int64Dtype())
 
@@ -261,7 +360,6 @@ class BookKeeper(commands.Bot):
 			self.discord_mapping[row['discord_id']] = await self.fetch_user(row['discord_id'])
 
 		self.friend_df['discord_name'] = self.friend_df['discord_id'].apply(lambda x: self.discord_mapping[x].name)
-		self.friend_df['discord_display'] = self.friend_df['discord_id'].apply(lambda x: '| ' + self.discord_mapping[x].name)
 
 		active_lobbies = set(map(lambda x: x[0],pgdb.get_unresolved_matches()))
 		for lobby_id in active_lobbies:
@@ -294,7 +392,7 @@ class BookKeeper(commands.Bot):
 		if live_lobby_id in self.lobby_objs.keys():
 			live_lobby = self.lobby_objs[live_lobby_id]
 		else:
-			live_lobby = Lobby(live_lobby_id,self.channel,self.friend_df,self)
+			live_lobby = Lobby(live_lobby_id,self.info_channel,self.comm_channel,self.friend_df,self)
 			await live_lobby.match_obj.init_msg_objs()
 			self.lobby_objs[live_lobby_id] = live_lobby
 
@@ -356,12 +454,7 @@ async def leaderboard(ctx,*arg):
 	db_result = pgdb.leaderboard()
 	agg = []
 	for i,(discord_id,amount) in enumerate(db_result):
-		try:
-			user = bot.discord_mapping[discord_id]
-		except KeyError:
-			bot.discord_mapping[discord_id] = await bot.fetch_user(discord_id)
-			user = bot.discord_mapping[discord_id]
-
+		user = await bot.cached_user(discord_id)
 		agg.append('{:5d} {:12d} | {}'.format(i+1,amount,user.name))
 
 	for msg in format_long('\n'.join(agg)):
@@ -382,7 +475,7 @@ async def active_bets(ctx,*arg):
 	else:
 		active_bets_df = pgdb.return_active_bets()
 
-	if active_bets_df is not None and len(active_bets_df) > 0:
+	if active_bets_df is not None and not active_bets_df.empty:
 
 		active_bets_df = pd.merge(active_bets_df,bot.friend_df,how='left',left_on=['gambler_id'],right_on=['discord_id'])
 		active_bets_df['side_str'] = active_bets_df['side'].apply(lambda x: 'Radiant' if x == MATCH_STATUS.RADIANT else 'Dire')
@@ -390,8 +483,8 @@ async def active_bets(ctx,*arg):
 		active_bets_df['match_id_str'] = active_bets_df['match_id'].apply(lambda x: str(x))
 
 		acc = []
-		for match_id,discord_name,side,amount in active_bets_df[['match_id_str','side_str','amount_str','discord_name']].values:
-			acc.append('{} | {} | {} | {}'.format(match_id,side,discord_name,amount))
+		for match_id,amount,side,discord_name in active_bets_df[['match_id_str','amount_str','side_str','discord_name']].values:
+			acc.append('{} | {:>7} | {:>12} | {}'.format(match_id,side,amount,discord_name))
 
 		for msg in format_long('\n'.join(acc)):
 			await ctx.send(msg)
