@@ -61,6 +61,10 @@ class PGDB:
 			db.Column('lobby_id',db.BigInteger,nullable=False,primary_key=True),
 			db.Column('message_id',db.BigInteger,nullable=False))
 
+		self.announce_message = db.Table('announce_message', self.metadata,
+			db.Column('lobby_id',db.BigInteger,nullable=False,primary_key=True),
+			db.Column('message_id',db.BigInteger,nullable=False))
+
 		self.live_matches = db.Table('live_matches', self.metadata,
 			db.Column('query_time',db.BigInteger,nullable=False),
 			db.Column('activate_time',db.BigInteger,nullable=False),
@@ -188,6 +192,16 @@ LOCK TABLE "Kali".friends IN ACCESS EXCLUSIVE MODE;'''
 		q = db.select([ll])
 		result = self.conn.execute(q).fetchall()
 		return result
+
+	def insert_announce_message(self,lobby_id,message_id):
+		lm = self.announce_message
+		insert = lm.insert().values(lobby_id=lobby_id,message_id=message_id)
+		result = self.conn.execute(insert)
+
+	def select_announce_message(self,lobby_id):
+		lm = self.announce_message
+		s = db.select([lm.c.message_id]).where(lm.c.lobby_id == lobby_id)
+		return self.conn.execute(s).fetchall()
 
 	def insert_match_message(self,lobby_id,message_id):
 		lm = self.lobby_message
@@ -362,7 +376,7 @@ AND bl.finalized = false'''.format(match_id)
 			ms = self.match_status
 			update = ms.update().values(status = int(status)).where(ms.c.match_id == match_id)
 			result = self.conn.execute(update)
-			return
+			return None,None
 
 		bets_query = '''SELECT bl.gambler_id, bl.wager_id, bl.amount, bl.side FROM "Kali".bet_ledger AS bl
 WHERE bl.match_id = {}
@@ -472,6 +486,8 @@ VALUES (currval(pg_get_serial_sequence('"Kali".bet_ledger', 'wager_id')), :gambl
 		statement = '\n'.join(statement)
 		print(statement)
 		self.conn.execute(statement)
+
+		return bets_df,charity_bets_df
 
 	def insert_match_status(self,match_id,match_players):
 		query_time = int(time.mktime(datetime.datetime.now().timetuple()))
