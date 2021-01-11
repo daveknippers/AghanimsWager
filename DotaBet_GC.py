@@ -69,6 +69,8 @@ def investigate_ClientPersonaState(msg):
 							continue
 						if f.rich_presence['param0'] == '#game_mode_18':
 							continue
+						if f.rich_presence['param0'] == '#game_mode_23':
+							continue
 					except KeyError:
 						continue
 					if status == '#DOTA_RP_PLAYING_AS':
@@ -157,7 +159,7 @@ def handle_disconnect():
 	if client.relogin_available:
 		client.reconnect()
 
-pgdb = PGDB(CONNECTION_STRING)
+pgdb = PGDB(CONNECTION_STRING,'DotaBet_GC')
 	
 result = client.cli_login(username=STEAM_BOT_ACCOUNT,password=STEAM_BOT_PASSWORD)
 if result != EResult.OK:
