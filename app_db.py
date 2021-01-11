@@ -3,6 +3,7 @@ import datetime, time
 import sqlalchemy as db
 from sqlalchemy import exc, text, desc
 import pandas as pd
+import numpy as np
 
 import logging
 from enum import Enum, auto, IntEnum
@@ -25,8 +26,8 @@ class LP_STATUS(Enum):
 
 class PGDB:
 
-	def __init__(self,conn_string):
-		self.engine = db.create_engine(conn_string,isolation_level="AUTOCOMMIT")
+	def __init__(self,conn_string,app_name):
+		self.engine = db.create_engine(conn_string,isolation_level="AUTOCOMMIT",connect_args={"application_name":app_name})
 		self.conn = self.engine.connect()
 		self.metadata = db.MetaData(schema='Kali')
 
@@ -107,7 +108,97 @@ class PGDB:
 			db.Column('param1',db.String,nullable=True,primary_key=True),
 			db.Column('param2',db.String,nullable=True))
 
-		self.metadata.create_all(self.engine)
+		self.match_details = db.Table('match_details', self.metadata,
+			db.Column('match_id',db.BigInteger,nullable=False),
+			db.Column('duration',db.Integer,nullable=False),
+			db.Column('pre_game_duration',db.Integer,nullable=False),
+			db.Column('start_time',db.BigInteger,nullable=False),
+			db.Column('match_seq_num',db.BigInteger,nullable=False),
+			db.Column('tower_status_radiant',db.Integer,nullable=False),
+			db.Column('tower_status_dire',db.Integer,nullable=False),
+			db.Column('barracks_status_radiant',db.Integer,nullable=False),
+			db.Column('barracks_status_dire',db.Integer,nullable=False),
+			db.Column('cluster',db.Integer,nullable=False),
+			db.Column('first_blood_time',db.Integer,nullable=False),
+			db.Column('lobby_type',db.Integer,nullable=False),
+			db.Column('human_players',db.Integer,nullable=False),
+			db.Column('leagueid',db.Integer,nullable=False),
+			db.Column('positive_votes',db.Integer,nullable=False),
+			db.Column('negative_votes',db.Integer,nullable=False),
+			db.Column('game_mode',db.Integer,nullable=False),
+			db.Column('flags',db.Integer,nullable=False),
+			db.Column('engine',db.Integer,nullable=False),
+			db.Column('radiant_score',db.Integer,nullable=False),
+			db.Column('dire_score',db.Integer,nullable=False),
+			db.Column('radiant_win',db.Boolean,nullable=True))
+
+		self.player_match_details = db.Table('player_match_details', self.metadata,
+			db.Column('match_id',db.BigInteger,nullable=False),
+			db.Column('account_id',db.BigInteger,nullable=False),
+			db.Column('player_slot',db.Integer,nullable=False),
+			db.Column('hero_id',db.Integer,nullable=False),
+			db.Column('item_0',db.Integer,nullable=False),
+			db.Column('item_1',db.Integer,nullable=False),
+			db.Column('item_2',db.Integer,nullable=False),
+			db.Column('item_3',db.Integer,nullable=False),
+			db.Column('item_4',db.Integer,nullable=False),
+			db.Column('item_5',db.Integer,nullable=False),
+			db.Column('backpack_0',db.Integer,nullable=False),
+			db.Column('backpack_1',db.Integer,nullable=False),
+			db.Column('backpack_2',db.Integer,nullable=False),
+			db.Column('item_neutral',db.Integer,nullable=False),
+			db.Column('kills',db.Integer,nullable=False),
+			db.Column('deaths',db.Integer,nullable=False),
+			db.Column('assists',db.Integer,nullable=False),
+			db.Column('leaver_status',db.Integer,nullable=False),
+			db.Column('last_hits',db.Integer,nullable=False),
+			db.Column('denies',db.Integer,nullable=False),
+			db.Column('gold_per_min',db.Integer,nullable=False),
+			db.Column('xp_per_min',db.Integer,nullable=False),
+			db.Column('level',db.Integer,nullable=False),
+			db.Column('hero_damage',db.Integer,nullable=False),
+			db.Column('tower_damage',db.Integer,nullable=False),
+			db.Column('hero_healing',db.Integer,nullable=False),
+			db.Column('gold',db.Integer,nullable=False),
+			db.Column('gold_spent',db.Integer,nullable=False),
+			db.Column('scaled_hero_damage',db.Integer,nullable=False),
+			db.Column('scaled_tower_damage',db.Integer,nullable=False),
+			db.Column('scaled_hero_healing',db.Integer,nullable=False))
+
+		self.ability_details = db.Table('ability_details', self.metadata,
+			db.Column('match_id',db.BigInteger,nullable=False),
+			db.Column('player_slot',db.Integer,nullable=False),
+			db.Column('ability',db.Integer,nullable=False),
+			db.Column('time',db.Integer,nullable=False),
+			db.Column('level',db.Integer,nullable=False))
+
+		self.pick_details = db.Table('pick_details', self.metadata,
+			db.Column('match_id',db.BigInteger,nullable=False),
+			db.Column('is_pick',db.Boolean,nullable=False),
+			db.Column('hero_id',db.Integer,nullable=False),
+			db.Column('team',db.Integer,nullable=False),
+			db.Column('order',db.Integer,nullable=False))
+
+		self.bear_details = db.Table('bear_details', self.metadata,
+			db.Column('match_id',db.BigInteger,nullable=False),
+			db.Column('player_slot',db.Integer,nullable=False),
+			db.Column('unitname',db.String,nullable=False),
+			db.Column('item_0',db.Integer,nullable=False),
+			db.Column('item_1',db.Integer,nullable=False),
+			db.Column('item_2',db.Integer,nullable=False),
+			db.Column('item_3',db.Integer,nullable=False),
+			db.Column('item_4',db.Integer,nullable=False),
+			db.Column('item_5',db.Integer,nullable=False),
+			db.Column('backpack_0',db.Integer,nullable=False),
+			db.Column('backpack_1',db.Integer,nullable=False),
+			db.Column('backpack_2',db.Integer,nullable=False),
+			db.Column('item_neutral',db.Integer,nullable=False))
+			
+
+		self.metadata.create_all(self.conn)
+
+	def insert_df(self, table_name, df):
+		df.to_sql(table_name,self.conn,schema='Kali',if_exists='append',index=False)
 
 	def select_discord_ids(self):
 		di = self.discord_ids
@@ -307,6 +398,61 @@ LOCK TABLE "Kali".friends IN ACCESS EXCLUSIVE MODE;'''
 		s = db.select([bl.c.discord_id,bl.c.tokens]).where(bl.c.discord_id > 0).order_by(desc(bl.c.tokens))
 		return self.conn.execute(s).fetchall()
 
+	def redistribute_wealth(self,tax_rate):
+
+		balances = self.leaderboard()
+		balances_df = pd.DataFrame(balances,columns=['discord_id','tokens'],dtype=pd.Int64Dtype())
+
+		balances_df
+
+		if balances_df.empty:
+			return "There's no users in the database"
+
+		all_tokens = balances_df['tokens'].sum()
+		print('all_tokens:',type(all_tokens),all_tokens)
+
+		balances_df['tax_rate'] = tax_rate
+		#balances_df['tax_amount'] = np.floor(balances_df['tokens']*balances_df['tax_rate']).astype(pd.Int64Dtype())
+		balances_df['tax_amount'] = np.floor(balances_df['tokens']*balances_df['tax_rate']).astype(pd.Int64Dtype())
+		balances_df['frac'] = balances_df['tokens']/all_tokens
+		
+		n_people = len(balances_df)
+		all_taxes = int(balances_df['tax_amount'].sum())
+
+		tax_per_person,remainder = divmod(all_taxes,n_people)
+		all_tax_per_person = tax_per_person*n_people
+
+		balances_df['target_tax_amount'] = balances_df['frac']*all_tax_per_person
+
+		balances_df['split'] = tax_per_person
+
+		balances_df['diff'] = np.floor(balances_df['split'] - balances_df['tax_amount']).astype(pd.Int64Dtype())
+		total_redistributed = int(balances_df['diff'].sum())
+
+		statement = []
+		begin = '''BEGIN WORK;
+LOCK TABLE "Kali".balance_ledger IN ACCESS EXCLUSIVE MODE;'''
+		statement.append(begin)
+
+		update_balance = text('UPDATE "Kali".balance_ledger SET tokens = tokens + :tokens WHERE discord_id = :discord_id')
+
+		for discord_id, diff in balances_df[['discord_id','diff']].values:
+			discord_id = int(discord_id)
+			diff = int(diff)
+
+			update_wager_sql = str(update_balance.bindparams(tokens = diff,
+						discord_id = discord_id).compile(compile_kwargs={"literal_binds": True}))+';'
+			statement.append(update_wager_sql)
+
+		end = 'COMMIT WORK;'
+		statement.append(end)
+
+
+		statement = '\n'.join(statement)
+		self.conn.execute(statement)
+
+		return 'Rejoice, My Comrades! {} golden salt has been redistributed.'.format(all_tax_per_person)
+
 
 	def check_balance(self,discord_id):
 		s = db.select([self.balance_ledger.c.tokens]).where(self.balance_ledger.c.discord_id == discord_id)
@@ -396,7 +542,7 @@ AND NOT EXISTS (SELECT FROM "Kali".charity AS ch WHERE bl.wager_id = ch.wager_id
 
 
 		if status == int(MATCH_STATUS.ERROR):
-			if bets_df != None:
+			if bets_df is not None:
 				for (gambler_id,amount) in bets_df[['gambler_id','amount']].values:
 					update_balance = text('UPDATE "Kali".balance_ledger SET tokens = tokens + :tokens WHERE discord_id = :discord_id')
 					update_wager_sql = str(update_balance.bindparams(tokens = int(amount),

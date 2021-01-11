@@ -30,7 +30,7 @@ CURRENCY = 'golden salt'
 INFO_CHANNEL = 'dota-bet-info'
 COMM_CHANNEL = 'dota-bet'
 
-pgdb = PGDB(CONNECTION_STRING)
+pgdb = PGDB(CONNECTION_STRING,'DotaBet_discord')
 
 with open('heroes.json') as f:
 	hero_data = json.load(f)
@@ -54,9 +54,10 @@ class MatchMsg:
 
 	players_only_msg_template = '''```New match id: {match_id}
 {players_only_msg}
-{gambling_status}
 
-!bet {match_id} [radiant/dire] amount```'''
+{gambling_status}```'''
+
+	mobile_friendly_msg = '```!bet {match_id} [radiant/dire] amount```'
 
 	players_msg_template = '''========= Radiant =========
 ---------------------------
@@ -125,7 +126,10 @@ Building State: {building_state}'''
 		match_msg += '\nMatch Winner: {}'.format(winning_side)
 
 		self.gambling_initialized = True
-		if pick_phase:
+		if self.winner != MATCH_STATUS.UNRESOLVED:
+			self.gambling_message = 'Bets are closed'
+
+		elif pick_phase:
 			self.gambling_message = 'Bets are open'
 
 		elif not pick_phase and not self.gambling_close:
@@ -137,7 +141,7 @@ Building State: {building_state}'''
 				self.gambling_message = 'Bets are closing in ~{} second(s)'.format(GAMBLING_CLOSE_WAIT)
 		elif not pick_phase:
 			current_time = int(time.mktime(datetime.datetime.now().timetuple()))
-			if current_time > self.gambling_close or self.winner != MATCH_STATUS.UNRESOLVED:
+			if current_time > self.gambling_close:
 				self.gambling_message = 'Bets are closed'
 			else:
 				remaining = self.gambling_close - current_time
@@ -170,6 +174,8 @@ Building State: {building_state}'''
 			self.announce_msg_id = self.announce_msg_obj.id
 			print('new announce_msg_id {} for lobby {}'.format(self.announce_msg_id,self.lobby_id))
 			pgdb.insert_announce_message(self.lobby_id,self.announce_msg_id)
+			mobile_friendly_msg = MatchMsg.mobile_friendly_msg.format(match_id=match_details['match_id'])
+			await self.comm_channel.send(mobile_friendly_msg)
 
 		else:
 			if self.announce_msg != announce_msg:
@@ -227,11 +233,11 @@ class Lobby:
 			bets_df,charity_df = pgdb.update_match_status(self.match_id,status)
 
 			if status == MATCH_STATUS.ERROR:
-				if bets_df == None or bets_df.empty:
-					msg = '```Cancelled match id: {match_id}```'.format(self.match_id)
+				if bets_df is None or bets_df.empty:
+					msg = '```Cancelled match id: {}```'.format(self.match_id)
 					await self.comm_channel.send(msg)
 				else:
-					msgs = ['Cancelled match id: {match_id}'.format(self.match_id)]
+					msgs = ['Cancelled match id: {}'.format(self.match_id)]
 					msgs.append('Bets Returned:')
 					for (gambler_id,amount,side) in bets_df[['gambler_id','amount','side']].values:
 						user = await self.client.cached_user(gambler_id)
@@ -244,19 +250,21 @@ class Lobby:
 				msgs = ['Match {} complete. Winner: {}'.format(self.match_id,LOCALIZED_STATUS[status])]
 				winners = []
 				losers = []
-				for (gambler_id,amount,side) in bets_df[['gambler_id','amount','side']].values:
-					user = await self.client.cached_user(gambler_id)
-					if status == side:
-						winners.append('WINNER: {:12d} | {}'.format(amount,user.name))
-					else:
-						losers.append(' LOSER: {:12d} | {}'.format(amount,user.name))
+				if bets_df is not None and not bets_df.empty:
+					for (gambler_id,amount,side) in bets_df[['gambler_id','amount','side']].values:
+						user = await self.client.cached_user(gambler_id)
+						if status == side:
+							winners.append('WINNER: {:12d} | {}'.format(amount,user.name))
+						else:
+							losers.append(' LOSER: {:12d} | {}'.format(amount,user.name))
 
-				for (gambler_id,amount,side) in charity_df[['gambler_id','amount','side']].values:
-					user = await self.client.cached_user(gambler_id)
-					if status == side:
-						winners.append('WINNER: {:12d} | {}'.format(amount,user.name))
-					else:
-						losers.append(' LOSER: {:12d} | {}'.format(amount,user.name))
+				if charity_df is not None and not charity_df.empty:
+					for (gambler_id,amount,side) in charity_df[['gambler_id','amount','side']].values:
+						user = await self.client.cached_user(gambler_id)
+						if status == side:
+							winners.append('WINNER: {:12d} | {}'.format(amount,user.name))
+						else:
+							losers.append(' LOSER: {:12d} | {}'.format(amount,user.name))
 
 				msgs.extend(winners)
 				msgs.extend(losers)
@@ -461,6 +469,18 @@ async def leaderboard(ctx,*arg):
 		await ctx.send(msg)
 
 @bot.command()
+async def redistribute_wealth(ctx,*arg):
+	if ctx.guild and str(ctx.message.channel) != COMM_CHANNEL:
+		return
+	discord_id = ctx.message.author.id
+	if ctx.message.author.id == SUPERUSER_ID:
+		msg = pgdb.redistribute_wealth(0.05)
+		await bot.comm_channel.send(msg)
+	else:
+		await ctx.send('{}, No.'.format(ctx.message.author.mention))
+		
+
+@bot.command()
 async def active_bets(ctx,*arg):
 	if ctx.guild and str(ctx.message.channel) != COMM_CHANNEL:
 		return
@@ -517,7 +537,7 @@ async def bet(ctx,*arg):
 		return
 
 	if not amount.isdigit():
-		await ctx.send('{}, amount must be an integer'.format(ctx.message.author.mention))
+		await ctx.send('{}, amount must be a positive integer'.format(ctx.message.author.mention))
 		return
 	else:
 		amount = int(amount)
