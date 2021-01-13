@@ -429,6 +429,11 @@ async def hi(ctx,*arg):
 		await ctx.send('{} ?'.format(ctx.message.author.mention))
 
 @bot.command()
+async def sacrifice(ctx,*arg):
+	if ctx.guild and str(ctx.message.channel) == COMM_CHANNEL:
+		await ctx.send('Kali is pleased.')
+
+@bot.command()
 async def balance(ctx,*arg):
 	if ctx.guild and str(ctx.message.channel) != COMM_CHANNEL:
 		return
