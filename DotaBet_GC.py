@@ -26,7 +26,7 @@ LAST_REFRESH_TIME = int(time.mktime(datetime.datetime.now().timetuple()))
 client = SteamClient()
 dota = Dota2Client(client)
 
-SLEEPY_TIME = 10
+SLEEPY_TIME = 15
 
 source_tv_lobbies = set()
 live_players_processed = defaultdict(lambda: LP_STATUS.NOT_FOUND)
