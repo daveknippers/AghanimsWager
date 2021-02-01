@@ -542,10 +542,15 @@ async def bet(ctx,*arg):
 		return
 
 	if not amount.isdigit():
-		await ctx.send('{}, amount must be a positive integer'.format(ctx.message.author.mention))
+		await ctx.send('{}, amount must be an non-negative integer'.format(ctx.message.author.mention))
 		return
 	else:
 		amount = int(amount)
+		'''
+		if amount == 0:
+			await ctx.send('{}, amount must be an non-negative integer'.format(ctx.message.author.mention))
+			return
+		'''
 
 	try:
 		lobby = bot.match_id_to_lobby[match_id]
