@@ -45,7 +45,7 @@ for t in sqlite_tables:
 	table_df = pd.DataFrame(rows,columns=columns)
 	if t == 'discord_ids':
 		table_df['account_id'] = table_df['steam_id'].apply(convert_steam_to_account)
-	table_df.to_sql(t,sqlite_connection,if_exists='fail')
+	table_df.to_sql(t,sqlite_connection,if_exists='fail',index=False)
 	
 sqlite_connection.close()
 	
