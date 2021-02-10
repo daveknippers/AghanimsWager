@@ -199,6 +199,12 @@ class PGDB:
 
 	def insert_df(self, table_name, df):
 		df.to_sql(table_name,self.conn,schema='Kali',if_exists='append',index=False)
+		
+	def select_table(self, table_name):
+		results = self.conn.execute('SELECT * FROM "Kali".{}'.format(table_name))
+		keys = results.keys()
+		results = results.fetchall()		
+		return keys,results
 
 	def select_discord_ids(self):
 		di = self.discord_ids

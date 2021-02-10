@@ -3,7 +3,6 @@ from pathlib import Path
 
 import requests
 
-
 import pandas as pd
 
 from app_db import PGDB, MATCH_STATUS
@@ -119,6 +118,9 @@ def process_match_details(match_json,pgdb):
 		pgdb.insert_df('pick_details',picks_df)
 
 if __name__ == '__main__':
+	'''
+	schuck_match_details(5786894434)
+	'''
 	db = PGDB(CONNECTION_STRING,'DotaWebAPI')
 	md_path = Path.cwd() / 'match_details' 
 	md_path.mkdir(exist_ok=True)
