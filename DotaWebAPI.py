@@ -126,10 +126,16 @@ if __name__ == '__main__':
 	md_path.mkdir(exist_ok=True)
 	imported_md_path = Path.cwd() / 'imported_match_details' 
 	imported_md_path.mkdir(exist_ok=True)
+	already_imported = list(map(lambda x: x.name, imported_md_path.glob('*.json')))
 	for match_file in md_path.glob('*.json'):
-		with open(match_file) as f:
-			match_json = json.load(f)
-		process_match_details(match_json,db)
-		new_match_file = imported_md_path / match_file.name
-		match_file.rename(new_match_file)
+		if match_file.name in already_imported:
+			print(match_file,'already imported, removing')
+			match_file.unlink()
+		else:
+			print('importing',match_file)	
+			with open(match_file) as f:
+				match_json = json.load(f)
+			process_match_details(match_json,db)
+			new_match_file = imported_md_path / match_file.name
+			match_file.rename(new_match_file)
 
