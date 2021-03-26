@@ -86,7 +86,8 @@ class PGDB:
 			db.Column('radiant_lead',db.Integer,nullable=False),
 			db.Column('radiant_score',db.Integer,nullable=False),
 			db.Column('dire_score',db.Integer,nullable=False),
-			db.Column('building_state',db.Integer,nullable=False))
+			db.Column('building_state',db.Integer,nullable=False),
+			db.Column('custom_game_difficulty',db.Integer,nullable=True))
 
 		self.friends = db.Table('friends', self.metadata,
 			db.Column('steam_id',db.BigInteger,nullable=False))

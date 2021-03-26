@@ -1,8 +1,6 @@
 
 import asyncio, json, datetime, re, time
 
-from asyncio_dispatch import Signal
-
 import discord
 import discord.utils
 from discord.ext import commands
