@@ -599,6 +599,11 @@
 "name":"npc_dota_hero_hoodwink",
 "id":123,
 "localized_name":"Hoodwink"
+},
+{
+"name":"npc_dota_hero_dawnbreaker",
+"id":135,
+"localized_name":"Dawnbreaker"
 }
 ]
 }
