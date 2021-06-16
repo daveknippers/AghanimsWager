@@ -21,9 +21,9 @@ def convert_steam_to_account(steam_id):
 	return int(str((account_id * 2) - account_type))
 
 sqlite_tables = [
-				 #"bet_ledger",
+				 "bet_ledger",
 				 #"charity",
-				 #"balance_ledger",
+				 "balance_ledger",
 				 #"live_lobbies",
 				 "match_status",
 				 #"lobby_message",

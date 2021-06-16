@@ -1,6 +1,7 @@
 import logging, datetime, time, json
 from collections import defaultdict
 
+from pathlib import Path
 from enum import Enum, auto
 
 logging.basicConfig(format='[%(asctime)s] %(levelname)s %(name)s: %(message)s', level=logging.WARN)
@@ -122,7 +123,39 @@ def start_dota():
 	logging.warning('Starting Dota GC communication')
 	dota.launch()
 
-#@dota.on('notready')
+@dota.on(EDOTAGCMsg.EMsgGCMatchDetailsResponse)
+def process_match_object(msg):
+	game = proto_to_dict(msg)
+	match_id = game['match']['match_id']
+	with open(extended_match_details_path / '{}_extended.json'.format(match_id), 'w') as f_out:
+		json.dump(game, f_out)
+		pgdb.update_extended_match_details_requests(match_id)
+
+EXTENDED_MATCH_DETAILS_REQUESTED = set()
+CHECKING_NOW = False
+
+def check_for_replays():
+	global CHECKING_NOW
+	if CHECKING_NOW:
+		return
+	else:
+		CHECKING_NOW = True
+	results = pgdb.get_extended_match_details_requests()
+	for match_id in results:
+		match_id = match_id[0]
+		logging.warning('checking for extended details on {}'.format(match_id))
+		if not ((extended_match_details_path / '{}_extended.json'.format(match_id)).exists()):
+			if match_id not in EXTENDED_MATCH_DETAILS_REQUESTED:
+				dota.request_match_details(match_id)
+				EXTENDED_MATCH_DETAILS_REQUESTED.add(match_id)
+
+				# this could get messy if there's a lot of extended match detail requests in queue...
+				gevent.sleep(1)
+		else:
+			msg = str(extended_match_details_path / '{}_extended.json'.format(match_id)) + ' already exists'
+			logging.warning(msg)
+	CHECKING_NOW = False
+	
 
 @dota.on('ready')
 def lobby_loop():
@@ -137,6 +170,8 @@ def lobby_loop():
 			friend_ids = list(map(lambda x: int(x.steam_id),client.friends))
 			pgdb.replace_friends(friend_ids)
 			FRIENDS_IN_DB = True
+			
+
 		gevent.sleep(SLEEPY_TIME)
 		logging.warning('Checking lobbies...')
 		logging.warning('current_live_lobbies: {}'.format(current_live_lobbies))
@@ -152,6 +187,7 @@ def lobby_loop():
 		elif n_lobbies == 0 and len(current_live_lobbies) != 0:
 			current_live_lobbies = set()
 			pgdb.replace_live(source_tv_lobbies)
+		check_for_replays()
 
 @client.on('disconnect')
 def handle_disconnect():
@@ -162,6 +198,10 @@ def handle_disconnect():
 pgdb = PGDB(CONNECTION_STRING,'DotaBet_GC')
 	
 result = client.cli_login(username=STEAM_BOT_ACCOUNT,password=STEAM_BOT_PASSWORD)
+
+extended_match_details_path = Path.cwd() / 'extended_match_details'
+extended_match_details_path.mkdir(exist_ok=True)
+
 if result != EResult.OK:
 	logging.error('Could not log in')	
 	raise SystemExit

@@ -121,6 +121,7 @@ if __name__ == '__main__':
 	'''
 	schuck_match_details(5786894434)
 	'''
+	
 	db = PGDB(CONNECTION_STRING,'DotaWebAPI')
 	md_path = Path.cwd() / 'match_details' 
 	md_path.mkdir(exist_ok=True)

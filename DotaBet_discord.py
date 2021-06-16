@@ -1,18 +1,17 @@
 
 import asyncio, json, datetime, re, time
+from pathlib import Path
 
+import requests
 import discord
 import discord.utils
 from discord.ext import commands
 
 import pandas as pd
-
 import sqlalchemy as db
 
 from tokens import TOKEN, CONNECTION_STRING
-
 from app_db import PGDB, MATCH_STATUS
-
 from DotaWebAPI import schuck_match_details
 
 SUPERUSER_ID = 148293973331542017
@@ -55,7 +54,7 @@ class MatchMsg:
 
 {gambling_status}```'''
 
-	mobile_friendly_msg = '```!bet {match_id} [radiant/dire] amount```'
+	mobile_friendly_msg = '```!bet {match_id} radiant/dire amount```'
 
 	players_msg_template = '''========= Radiant =========
 ---------------------------
@@ -123,7 +122,6 @@ Building State: {building_state}'''
 
 		match_msg += '\nMatch Winner: {}'.format(winning_side)
 
-		self.gambling_initialized = True
 		if self.winner != MATCH_STATUS.UNRESOLVED:
 			self.gambling_message = 'Bets are closed'
 
@@ -182,8 +180,10 @@ Building State: {building_state}'''
 				self.announce_msg = announce_msg
 			else:
 				print('no update for announce_msg_id {}'.format(self.announce_msg_id,self.lobby_id))
+		self.gambling_initialized = True
 			
 	async def announce_winner(self,winner):
+		self.gambling_close = -1
 		if winner == MATCH_STATUS.RADIANT:
 			w = 'Radiant'
 		elif winner == MATCH_STATUS.DIRE:
@@ -215,6 +215,7 @@ class Lobby:
 		self.match_id = None
 		self.last_update = None
 
+
 		self.comm_channel = comm_channel
 
 		self.match_obj = MatchMsg(info_channel,comm_channel,lobby_id)
@@ -227,6 +228,7 @@ class Lobby:
 			return
 		else:
 			print('match id {} winner is {}'.format(self.match_id,status))
+			pgdb.request_extended_match_details(self.match_id)
 			await self.match_obj.announce_winner(status)
 			bets_df,charity_df = pgdb.update_match_status(self.match_id,status)
 
@@ -332,6 +334,9 @@ class BookKeeper(commands.Bot):
 		self.lobby_objs = {}
 		self.match_id_to_lobby = {}
 		self.waiting_on = set()
+		self.tried_once = set()
+
+		self.currently_retrieving_replays = False
 
 		self.info_channel = None
 		self.comm_channel = None
@@ -392,6 +397,9 @@ class BookKeeper(commands.Bot):
 
 			print('finished iterating through {} lobbies'.format(len(live_lobbies)))
 
+			print('checking for replays...'.format(len(live_lobbies)))
+			await self.try_retrieve_replays()
+
 	async def refresh_lobby(self,live_lobby_id):
 		print('lobby found: {}'.format(live_lobby_id))
 
@@ -404,10 +412,56 @@ class BookKeeper(commands.Bot):
 
 		await live_lobby.announce()
 
+	async def try_retrieve_replays(self):
+		if self.currently_retrieving_replays:
+			return
+
+		self.currently_retrieving_replays = True
+		extended_match_details_path = Path.cwd() / 'extended_match_details'
+		retrieved_extended_match_details_path = Path.cwd() / 'retrieved_extended_match_details'
+		ext_match_details = extended_match_details_path.glob('*.json')
+
+		for ext_md_file in ext_match_details:
+			print('checking for replay from {}'.format(ext_md_file.name))
+			# only try and download replay once per app run
+			if ext_md_file in self.tried_once:
+				print('\treplay already checked once this session, skipping.')
+				continue
+			else:
+				self.tried_once.add(ext_md_file)
+
+			with open(str(ext_md_file), 'r') as json_file:
+				ext_md = json.load(json_file)
+
+			cluster = ext_md['match']['cluster']
+			app_id = 570
+			match_id = ext_md['match']['match_id']
+			replay_salt = ext_md['match']['replay_salt']
+
+			replay_url = 'http://replay{0}.valve.net/{1}/{2}_{3}.dem.bz2'.format(cluster, app_id, match_id, replay_salt)
+			replay_file = retrieved_extended_match_details_path / '{}.dem.bz2'.format(match_id)
+
+			if not replay_file.exists():
+				r = requests.get(replay_url,timeout = 5,stream=True)
+				with open(str(replay_file), 'wb') as f:
+					for chunk in r.iter_content(chunk_size=1024):
+						if chunk: # filter out keep-alive new chunks
+							f.write(chunk)
+				print('\treplay {} downloaded'.format(replay_file.name))
+			else:
+				print('\t!!! replay already exists')
+
+			new_match_file = retrieved_extended_match_details_path / ext_md_file.name
+			ext_md_file.rename(new_match_file)
+		self.currently_retrieving_replays = False
+
 bot = BookKeeper(command_prefix='!', description='DotaBet')
 
 @bot.command()
 async def add_steam_id(ctx,*arg):
+	if ctx.guild is None:
+		await ctx.send('{}, ALL COMMUNICATION MUST NOW BE PUBLIC'.format(ctx.message.author.mention))
+		return
 	if ctx.guild and str(ctx.message.channel) != COMM_CHANNEL:
 		return
 	if len(arg) != 1:
@@ -423,16 +477,25 @@ async def add_steam_id(ctx,*arg):
 
 @bot.command()
 async def hi(ctx,*arg):
+	if ctx.guild is None:
+		await ctx.send('{}, ALL COMMUNICATION MUST NOW BE PUBLIC'.format(ctx.message.author.mention))
+		return
 	if not ctx.guild or str(ctx.message.channel) == COMM_CHANNEL:
 		await ctx.send('{} ?'.format(ctx.message.author.mention))
 
 @bot.command()
 async def sacrifice(ctx,*arg):
+	if ctx.guild is None:
+		await ctx.send('{}, ALL COMMUNICATION MUST NOW BE PUBLIC'.format(ctx.message.author.mention))
+		return
 	if ctx.guild and str(ctx.message.channel) == COMM_CHANNEL:
 		await ctx.send('Kali is pleased.')
 
 @bot.command()
 async def balance(ctx,*arg):
+	if ctx.guild is None:
+		await ctx.send('{}, ALL COMMUNICATION MUST NOW BE PUBLIC'.format(ctx.message.author.mention))
+		return
 	if ctx.guild and str(ctx.message.channel) != COMM_CHANNEL:
 		return
 	amount = pgdb.check_balance(ctx.message.author.id)
@@ -459,6 +522,9 @@ def format_long(msg):
 
 @bot.command()
 async def leaderboard(ctx,*arg):
+	if ctx.guild is None:
+		await ctx.send('{}, ALL COMMUNICATION MUST NOW BE PUBLIC'.format(ctx.message.author.mention))
+		return
 	if ctx.guild and str(ctx.message.channel) != COMM_CHANNEL:
 		return
 
@@ -473,6 +539,9 @@ async def leaderboard(ctx,*arg):
 
 @bot.command()
 async def redistribute_wealth(ctx,*arg):
+	if ctx.guild is None:
+		await ctx.send('{}, ALL COMMUNICATION MUST NOW BE PUBLIC'.format(ctx.message.author.mention))
+		return
 	if ctx.guild and str(ctx.message.channel) != COMM_CHANNEL:
 		return
 	discord_id = ctx.message.author.id
@@ -485,6 +554,9 @@ async def redistribute_wealth(ctx,*arg):
 
 @bot.command()
 async def active_bets(ctx,*arg):
+	if ctx.guild is None:
+		await ctx.send('{}, ALL COMMUNICATION MUST NOW BE PUBLIC'.format(ctx.message.author.mention))
+		return
 	if ctx.guild and str(ctx.message.channel) != COMM_CHANNEL:
 		return
 	if len(arg) == 1:
@@ -513,11 +585,12 @@ async def active_bets(ctx,*arg):
 			await ctx.send(msg)
 	else:
 		await ctx.send('{}, there are no active bets'.format(ctx.message.author.mention))
-
-			
 		
 @bot.command()
 async def bet(ctx,*arg):
+	if ctx.guild is None:
+		await ctx.send('{}, ALL COMMUNICATION MUST NOW BE PUBLIC'.format(ctx.message.author.mention))
+		return
 	if ctx.guild and str(ctx.message.channel) != COMM_CHANNEL:
 		return
 	if len(arg) != 3:
@@ -544,11 +617,9 @@ async def bet(ctx,*arg):
 		return
 	else:
 		amount = int(amount)
-		'''
 		if amount == 0:
 			await ctx.send('{}, amount must be an non-negative integer'.format(ctx.message.author.mention))
 			return
-		'''
 
 	try:
 		lobby = bot.match_id_to_lobby[match_id]

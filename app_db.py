@@ -11,6 +11,7 @@ from enum import Enum, auto, IntEnum
 NEW_PLAYER_STIPEND = 500
 AUTOBET = 50
 HOUSE_BET = 500
+WAIT_REPLAY = 1200
 
 class MATCH_STATUS(IntEnum):
 	UNRESOLVED = auto()
@@ -30,6 +31,11 @@ class PGDB:
 		self.engine = db.create_engine(conn_string,isolation_level="AUTOCOMMIT",connect_args={"application_name":app_name})
 		self.conn = self.engine.connect()
 		self.metadata = db.MetaData(schema='Kali')
+
+		self.extended_match_details_request = db.Table('extended_match_details_request', self.metadata,
+			db.Column('match_id',db.BigInteger,nullable=False,primary_key=True),
+			db.Column('request_time',db.Integer,nullable=False),
+			db.Column('match_details_retrieved',db.Boolean,nullable=False))
 
 		self.bet_ledger = db.Table('bet_ledger', self.metadata,
 			db.Column('wager_id',db.Integer,primary_key=True),
@@ -197,6 +203,25 @@ class PGDB:
 			
 
 		self.metadata.create_all(self.conn)
+
+	def request_extended_match_details(self,match_id):
+		request_time = int(time.mktime(datetime.datetime.now().timetuple()))
+		emdr = self.extended_match_details_request
+		insert = emdr.insert().values(match_id=match_id,request_time=request_time,match_details_retrieved=False)
+		return self.conn.execute(insert)
+
+	def update_extended_match_details_requests(self,match_id):
+		emdr = self.extended_match_details_request
+		update = emdr.update().values(match_details_retrieved = True).where(emdr.c.match_id == match_id)
+		self.conn.execute(update)
+	
+	def get_extended_match_details_requests(self):
+		current_time = int(time.mktime(datetime.datetime.now().timetuple()))
+		emdr = self.extended_match_details_request
+		q = db.select([emdr.c.match_id]).where(db.and_(emdr.c.request_time+WAIT_REPLAY < current_time, 
+											~emdr.c.match_details_retrieved))
+		result = self.conn.execute(q).fetchall()
+		return result
 
 	def insert_df(self, table_name, df):
 		df.to_sql(table_name,self.conn,schema='Kali',if_exists='append',index=False)
