@@ -247,7 +247,7 @@ class Lobby:
 						await self.comm_channel.send(msg)
 
 			else:
-				msgs = ['Match {} complete. Winner: {}'.format(self.match_id,LOCALIZED_STATUS[status])]
+				msgs = ['********************************************\nMatch {} complete. Winner: {}'.format(self.match_id,LOCALIZED_STATUS[status])]
 				winners = []
 				losers = []
 				if bets_df is not None and not bets_df.empty:

@@ -27,7 +27,7 @@ LAST_REFRESH_TIME = int(time.mktime(datetime.datetime.now().timetuple()))
 client = SteamClient()
 dota = Dota2Client(client)
 
-SLEEPY_TIME = 15
+SLEEP_TIME = 15
 
 source_tv_lobbies = set()
 live_players_processed = defaultdict(lambda: LP_STATUS.NOT_FOUND)
@@ -172,7 +172,7 @@ def lobby_loop():
 			FRIENDS_IN_DB = True
 			
 
-		gevent.sleep(SLEEPY_TIME)
+		gevent.sleep(SLEEP_TIME)
 		logging.warning('Checking lobbies...')
 		logging.warning('current_live_lobbies: {}'.format(current_live_lobbies))
 		logging.warning('source_tv_lobbies: {}'.format(source_tv_lobbies))
