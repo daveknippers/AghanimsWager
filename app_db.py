@@ -445,6 +445,21 @@ order by 2 desc;'''
 		result = self.conn.execute(q).fetchall()
 		return result
 
+	def feederboard(self):
+		q = '''with T1 as (
+select discord_id, match_id, deaths, row_number() over (partition by discord_id order by match_id desc) as rownum
+from "Kali"."discord_ids" di
+join "Kali"."player_match_details" pmd
+	on di.account_id = pmd.account_id
+)
+select discord_id, sum(deaths)
+from T1
+where rownum <= 10
+group by discord_id
+order by 2 desc;'''
+		result = self.conn.execute(q).fetchall()
+		return result
+
 	def redistribute_wealth(self,tax_rate):
 
 		balances = self.leaderboard()

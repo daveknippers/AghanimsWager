@@ -557,6 +557,24 @@ async def feederboard(ctx,*arg):
 		await ctx.send(msg)
 
 @bot.command()
+async def feederboard(ctx,*arg):
+	if ctx.guild is None:
+		await ctx.send('{}, ALL COMMUNICATION MUST NOW BE PUBLIC'.format(ctx.message.author.mention))
+		return
+	if ctx.guild and str(ctx.message.channel) != COMM_CHANNEL:
+		return
+
+	db_result = pgdb.feederboard()
+	agg = []
+	agg.append('Rank	Deaths (last 10 games) | Name ')
+	for i,(discord_id,amount) in enumerate(db_result):
+		user = await bot.cached_user(discord_id)
+		agg.append('{:5d} {:12d} | {}'.format(i+1,amount,user.name))
+
+	for msg in format_long('\n'.join(agg)):
+		await ctx.send(msg)
+
+@bot.command()
 async def redistribute_wealth(ctx,*arg):
 	if ctx.guild is None:
 		await ctx.send('{}, ALL COMMUNICATION MUST NOW BE PUBLIC'.format(ctx.message.author.mention))
