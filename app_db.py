@@ -431,15 +431,17 @@ LOCK TABLE "Kali".friends IN ACCESS EXCLUSIVE MODE;'''
 		return self.conn.execute(s).fetchall()
 
 	def feederboard(self):
-		q = '''select discord_id, sum(deaths)
-from (
+		q = '''with T1 as (
 select discord_id, match_id, deaths, row_number() over (partition by discord_id order by match_id desc) as rownum
-from discord_ids di
-join player_match_details pmd
+from "Kali"."discord_ids" di
+join "Kali"."player_match_details" pmd
 	on di.account_id = pmd.account_id
-) where rownum <= 10
+)
+select discord_id, sum(deaths)
+from T1
+where rownum <= 10
 group by discord_id
-order by 2 desc'''
+order by 2 desc;'''
 		result = self.conn.execute(q).fetchall()
 		return result
 
