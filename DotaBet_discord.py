@@ -472,7 +472,8 @@ async def add_steam_id(ctx,*arg):
 	if len(steam_id) != 17 or not str(steam_id).isdigit():
 		await ctx.send('Invalid syntax, steam_id is a 17 digit number')
 	else:
-		if (result := pgdb.insert_discord_id(discord_id,steam_id)):
+		account_id = convert_steam_to_account(steam_id)
+		if (result := pgdb.insert_discord_id(discord_id,steam_id,account_id)):
 			await ctx.send('Added steam_id {} for {}'.format(steam_id,ctx.message.author.mention))
 
 @bot.command()
@@ -533,6 +534,24 @@ async def leaderboard(ctx,*arg):
 	for i,(discord_id,amount) in enumerate(db_result):
 		user = await bot.cached_user(discord_id)
 		agg.append('{:5d} {:12d} | {}'.format(i+1,amount,user.name))
+
+	for msg in format_long('\n'.join(agg)):
+		await ctx.send(msg)
+		
+@bot.command()
+async def feederboard(ctx,*arg):
+	if ctx.guild is None:
+		await ctx.send('{}, ALL COMMUNICATION MUST NOW BE PUBLIC'.format(ctx.message.author.mention))
+		return
+	if ctx.guild and str(ctx.message.channel) != COMM_CHANNEL:
+		return
+
+	db_result = pgdb.feederboard()
+	agg = []
+	agg.append('Rank  | Deaths [last 10] | Name ')
+	for i,(discord_id,amount) in enumerate(db_result):
+		user = await bot.cached_user(discord_id)
+		agg.append('{:5d} | {:16d} | {}'.format(i+1,amount,user.name))
 
 	for msg in format_long('\n'.join(agg)):
 		await ctx.send(msg)
