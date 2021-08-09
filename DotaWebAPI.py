@@ -116,27 +116,39 @@ def process_match_details(match_json,pgdb):
 	if picks_bans is not None:
 		picks_df = pd.DataFrame(picks_bans)
 		pgdb.insert_df('pick_details',picks_df)
-
-if __name__ == '__main__':
-	'''
-	schuck_match_details(5786894434)
-	'''
-	
+		
+def perform_import():
 	db = PGDB(CONNECTION_STRING,'DotaWebAPI')
 	md_path = Path.cwd() / 'match_details' 
 	md_path.mkdir(exist_ok=True)
 	imported_md_path = Path.cwd() / 'imported_match_details' 
 	imported_md_path.mkdir(exist_ok=True)
 	already_imported = list(map(lambda x: x.name, imported_md_path.glob('*.json')))
+	successful = 0
+	unsuccessful = 0
 	for match_file in md_path.glob('*.json'):
 		if match_file.name in already_imported:
 			print(match_file,'already imported, removing')
 			match_file.unlink()
 		else:
-			print('importing',match_file)	
-			with open(match_file) as f:
-				match_json = json.load(f)
-			process_match_details(match_json,db)
-			new_match_file = imported_md_path / match_file.name
-			match_file.rename(new_match_file)
+			print('importing',match_file)
+			try:
+				with open(match_file) as f:
+					match_json = json.load(f)
+				process_match_details(match_json,db)
+				new_match_file = imported_md_path / match_file.name
+				match_file.rename(new_match_file)
+				successful += 1
+			except:
+				print('error importing',match_file)
+				unsuccessful += 1
+	return successful,unsuccessful
+
+if __name__ == '__main__':
+	'''
+	schuck_match_details(6112939577)
+	sys.exit()
+	'''
+	perform_import()
+
 
