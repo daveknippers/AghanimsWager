@@ -238,20 +238,19 @@ class PGDB:
 		result = self.conn.execute(q).fetchall()
 		return result
 		
-	def insert_discord_id(self,discord_id,steam_id):
+	def insert_discord_id(self,discord_id,steam_id,account_id):
 		di = self.discord_ids
 		q = db.select([di.c.discord_id]).where(di.c.discord_id == discord_id)
 		result = self.conn.execute(q).fetchall()
 		if len(result) == 0:
-			insert = di.insert().values(discord_id=discord_id,steam_id=steam_id)
+			insert = di.insert().values(discord_id=discord_id,steam_id=steam_id,account_id=account_id)
 			return self.conn.execute(insert)
 		elif len(result) == 1:
-			update = di.update().values(steam_id = steam_id).where(di.c.discord_id == discord_id)
+			update = di.update().values(steam_id = steam_id,account_id=account_id).where(di.c.discord_id == discord_id)
 			return self.conn.execute(update)
 		elif len(result) > 1:
-			print('Insert discord_id/steam_id failed for {} / {}, multiple results returned'.format(discord_id,steam_id))
+			print('Insert discord_id/steam_id/account_id failed for {} / {} / {}, multiple results returned'.format(discord_id,steam_id,account_id))
 			return None
-
 
 	def check_match_status(self,match_id):
 		ms = self.match_status
@@ -430,21 +429,6 @@ LOCK TABLE "Kali".friends IN ACCESS EXCLUSIVE MODE;'''
 		s = db.select([bl.c.discord_id,bl.c.tokens]).where(bl.c.discord_id > 0).order_by(desc(bl.c.tokens))
 		return self.conn.execute(s).fetchall()
 	
-	def feederboard(self):
-		q = '''with T1 as (
-select discord_id, match_id, deaths, row_number() over (partition by discord_id order by match_id desc) as rownum
-from "Kali"."discord_ids" di
-join "Kali"."player_match_details" pmd
-	on di.account_id = pmd.account_id
-)
-select discord_id, sum(deaths)
-from T1
-where rownum <= 10
-group by discord_id
-order by 2 desc;'''
-		result = self.conn.execute(q).fetchall()
-		return result
-
 	def feederboard(self):
 		q = '''with T1 as (
 select discord_id, match_id, deaths, row_number() over (partition by discord_id order by match_id desc) as rownum
