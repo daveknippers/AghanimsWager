@@ -100,7 +100,8 @@ class PGDB:
 
 		self.discord_ids = db.Table('discord_ids', self.metadata,
 			db.Column('discord_id',db.BigInteger,nullable=False),
-			db.Column('steam_id',db.BigInteger,nullable=False))
+			db.Column('steam_id',db.BigInteger,nullable=False),
+			db.Column('account_id',db.BigInteger,nullable=False))
 
 		self.live_players = db.Table('live_players', self.metadata,
 			db.Column('match_id',db.BigInteger,nullable=False),
