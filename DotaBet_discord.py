@@ -361,7 +361,7 @@ class BookKeeper(commands.Bot):
 		self.info_channel = discord.utils.get(self.get_all_channels(), name=INFO_CHANNEL)
 		self.comm_channel = discord.utils.get(self.get_all_channels(), name=COMM_CHANNEL)
 
-		discord_id_df = pd.DataFrame(pgdb.select_discord_ids(),columns=['discord_id','steam_id'],dtype=pd.Int64Dtype())
+		discord_id_df = pd.DataFrame(pgdb.select_discord_ids(),columns=['discord_id','steam_id','account_id'],dtype=pd.Int64Dtype())
 
 		self.friend_df = pd.DataFrame(map(lambda x: x[0],pgdb.select_friends()),columns=['steam_id'],dtype=pd.Int64Dtype())
 		self.friend_df['account_id'] = self.friend_df['steam_id'].apply(convert_steam_to_account)
