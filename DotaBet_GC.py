@@ -34,6 +34,12 @@ live_players_processed = defaultdict(lambda: LP_STATUS.NOT_FOUND)
 rp_heroes_processed = set()
 FRIENDS_IN_DB = False
 
+# this function represents my first attempts to parse friend list data to determine when friends are
+# in a game. in the event that valve do something to stop things like Overwolf from working,
+# it might be necessary to use this data instead. one could take out the reference to this
+# call in investigate_ClientPersonaState and the bot would continue working. i'm leaving it in,
+# because the data it collects isn't that large and if it's not broken i don't see a need to 
+# remove it.
 def add_rp_hero(lobby_id,steam_id,rich_presence):
 	if (lobby_id,steam_id) not in rp_heroes_processed:
 		try:
@@ -150,6 +156,7 @@ def check_for_replays():
 				EXTENDED_MATCH_DETAILS_REQUESTED.add(match_id)
 
 				# this could get messy if there's a lot of extended match detail requests in queue...
+				# could be improved if it ends up being problematic
 				gevent.sleep(1)
 		else:
 			msg = str(extended_match_details_path / '{}_extended.json'.format(match_id)) + ' already exists'
