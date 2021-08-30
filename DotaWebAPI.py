@@ -46,14 +46,15 @@ def request_match_details(match_id):
 	req['key'] = STEAM_API_KEY
 	req['match_id'] = match_id
 
-	response = requests.get(url_GetMatchDetails,params = req,timeout = 5)
-	status = response.status_code
-
-	if status == 200:
-		return response.json()
-	else:
-		print('request_match_details {} get return status: {}'.format(match_id,status))
+	try:
+		response = requests.get(url_GetMatchDetails,params = req,timeout = 5)
+		status = response.status_code
+		if status == 200:
+			return response.json()
+	except (requests.ConnectionError, requests.Timeout, requests.RequestException):
+		print('request_match_details {} failed'.format(match_id))
 		return None
+
 
 def process_match_details(match_json,pgdb):
 	match_json = match_json['result']

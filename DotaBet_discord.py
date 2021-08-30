@@ -431,8 +431,12 @@ class BookKeeper(commands.Bot):
 				self.tried_once.add(ext_md_file)
 
 			with open(str(ext_md_file), 'r') as json_file:
-				ext_md = json.load(json_file)
-
+				try:
+					ext_md = json.load(json_file)
+				except json.decoder.JSONDecodeError:
+					print('\tcannot process json {}'.format(ext_md_file))
+					continue
+				
 			cluster = ext_md['match']['cluster']
 			app_id = 570
 			match_id = ext_md['match']['match_id']
@@ -442,12 +446,16 @@ class BookKeeper(commands.Bot):
 			replay_file = retrieved_extended_match_details_path / '{}.dem.bz2'.format(match_id)
 
 			if not replay_file.exists():
-				r = requests.get(replay_url,timeout = 5,stream=True)
-				with open(str(replay_file), 'wb') as f:
-					for chunk in r.iter_content(chunk_size=1024):
-						if chunk: # filter out keep-alive new chunks
-							f.write(chunk)
-				print('\treplay {} downloaded'.format(replay_file.name))
+				try:
+					r = requests.get(replay_url,timeout = 5,stream=True)
+					with open(str(replay_file), 'wb') as f:
+						for chunk in r.iter_content(chunk_size=1024):
+							if chunk: # filter out keep-alive new chunks
+								f.write(chunk)
+					print('\treplay {} downloaded'.format(replay_file.name))
+				except (requests.ConnectionError, requests.Timeout, requests.RequestException):
+					print('try_retrieve_replays {} failed'.format(replay_url))
+					continue
 			else:
 				print('\t!!! replay already exists')
 
