@@ -133,9 +133,12 @@ def start_dota():
 def process_match_object(msg):
 	game = proto_to_dict(msg)
 	match_id = game['match']['match_id']
+	lock_file = extended_match_details_path / 'lock'
+	lock_file.touch()
 	with open(extended_match_details_path / '{}_extended.json'.format(match_id), 'w') as f_out:
 		json.dump(game, f_out)
 		pgdb.update_extended_match_details_requests(match_id)
+	lock_file.unlink()
 
 EXTENDED_MATCH_DETAILS_REQUESTED = set()
 CHECKING_NOW = False
@@ -146,6 +149,8 @@ def check_for_replays():
 		return
 	else:
 		CHECKING_NOW = True
+
+
 	results = pgdb.get_extended_match_details_requests()
 	for match_id in results:
 		match_id = match_id[0]
@@ -203,11 +208,15 @@ def handle_disconnect():
 		client.reconnect()
 
 pgdb = PGDB(CONNECTION_STRING,'DotaBet_GC')
-	
-result = client.cli_login(username=STEAM_BOT_ACCOUNT,password=STEAM_BOT_PASSWORD)
 
 extended_match_details_path = Path.cwd() / 'extended_match_details'
 extended_match_details_path.mkdir(exist_ok=True)
+lock_file = extended_match_details_path / 'lock'
+if lock_file.exists():
+	lock_file.unlink()
+	
+result = client.cli_login(username=STEAM_BOT_ACCOUNT,password=STEAM_BOT_PASSWORD)
+
 
 if result != EResult.OK:
 	logging.error('Could not log in')	

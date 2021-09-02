@@ -418,6 +418,12 @@ class BookKeeper(commands.Bot):
 
 		self.currently_retrieving_replays = True
 		extended_match_details_path = Path.cwd() / 'extended_match_details'
+
+		lock_file = extended_match_details_path / 'lock'
+		if lock_file.exists():
+			print('\textended match details locked')
+			return
+
 		retrieved_extended_match_details_path = Path.cwd() / 'retrieved_extended_match_details'
 		ext_match_details = extended_match_details_path.glob('*.json')
 
@@ -433,7 +439,9 @@ class BookKeeper(commands.Bot):
 			with open(str(ext_md_file), 'r') as json_file:
 				try:
 					ext_md = json.load(json_file)
-				except json.decoder.JSONDecodeError:
+				except json.decoder.JSONDecodeError as e:
+					# seems like this sometimes goes wrong if the other process
+					# is still writing the json. gonna have to think about best solution.
 					print('\tcannot process json {}'.format(ext_md_file))
 					continue
 				
