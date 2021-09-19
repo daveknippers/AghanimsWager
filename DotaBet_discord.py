@@ -414,6 +414,7 @@ class BookKeeper(commands.Bot):
 
 	async def try_retrieve_replays(self):
 		if self.currently_retrieving_replays:
+			print('\tcannot retrieve replays, method never returned')
 			return
 
 		self.currently_retrieving_replays = True

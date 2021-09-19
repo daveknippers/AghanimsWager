@@ -61,7 +61,7 @@ class PGDB:
 			db.Column('lobby_id',db.BigInteger,nullable=False))
 
 		self.match_status = db.Table('match_status', self.metadata,
-			db.Column('match_id',db.BigInteger,nullable=False),
+			db.Column('match_id',db.BigInteger,nullable=False,primary_key=True),
 			db.Column('status',db.Integer,nullable=False))
 
 		self.lobby_message = db.Table('lobby_message', self.metadata,
