@@ -661,12 +661,12 @@ async def bet(ctx,*arg):
 		return
 
 	if not amount.isdigit():
-		await ctx.send('{}, amount must be an non-negative integer'.format(ctx.message.author.mention))
+		await ctx.send('{}, amount must be a non-negative integer'.format(ctx.message.author.mention))
 		return
 	else:
 		amount = int(amount)
 		if amount == 0:
-			await ctx.send('{}, amount must be an non-negative integer'.format(ctx.message.author.mention))
+			await ctx.send('{}, amount must be a non-negative integer'.format(ctx.message.author.mention))
 			return
 
 	try:
