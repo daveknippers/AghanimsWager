@@ -117,7 +117,7 @@ class PGDB:
 			db.Column('param2',db.String,nullable=True))
 
 		self.match_details = db.Table('match_details', self.metadata,
-			db.Column('match_id',db.BigInteger,nullable=False),
+			db.Column('match_id',db.BigInteger,primary_key=True,nullable=False),
 			db.Column('duration',db.Integer,nullable=False),
 			db.Column('pre_game_duration',db.Integer,nullable=False),
 			db.Column('start_time',db.BigInteger,nullable=False),
@@ -141,9 +141,9 @@ class PGDB:
 			db.Column('radiant_win',db.Boolean,nullable=True))
 
 		self.player_match_details = db.Table('player_match_details', self.metadata,
-			db.Column('match_id',db.BigInteger,nullable=False),
+			db.Column('match_id',db.BigInteger,primary_key=True,nullable=False),
 			db.Column('account_id',db.BigInteger,nullable=False),
-			db.Column('player_slot',db.Integer,nullable=False),
+			db.Column('player_slot',db.Integer,primary_key=True,nullable=False),
 			db.Column('hero_id',db.Integer,nullable=False),
 			db.Column('item_0',db.Integer,nullable=False),
 			db.Column('item_1',db.Integer,nullable=False),
@@ -171,7 +171,11 @@ class PGDB:
 			db.Column('gold_spent',db.Integer,nullable=False),
 			db.Column('scaled_hero_damage',db.Integer,nullable=False),
 			db.Column('scaled_tower_damage',db.Integer,nullable=False),
-			db.Column('scaled_hero_healing',db.Integer,nullable=False))
+			db.Column('scaled_hero_healing',db.Integer,nullable=False),
+			db.Column('aghanims_scepter',db.Integer,nullable=True),
+			db.Column('aghanims_shard',db.Integer,nullable=True),
+			db.Column('moonshard',db.Integer,nullable=True),
+			db.Column('net_worth',db.BigInteger,nullable=True))
 
 		self.ability_details = db.Table('ability_details', self.metadata,
 			db.Column('match_id',db.BigInteger,nullable=False),
@@ -181,15 +185,15 @@ class PGDB:
 			db.Column('level',db.Integer,nullable=False))
 
 		self.pick_details = db.Table('pick_details', self.metadata,
-			db.Column('match_id',db.BigInteger,nullable=False),
+			db.Column('match_id',db.BigInteger,primary_key=True,nullable=False),
 			db.Column('is_pick',db.Boolean,nullable=False),
 			db.Column('hero_id',db.Integer,nullable=False),
 			db.Column('team',db.Integer,nullable=False),
-			db.Column('order',db.Integer,nullable=False))
+			db.Column('order',db.Integer,primary_key=True,nullable=False))
 
 		self.bear_details = db.Table('bear_details', self.metadata,
-			db.Column('match_id',db.BigInteger,nullable=False),
-			db.Column('player_slot',db.Integer,nullable=False),
+			db.Column('match_id',db.BigInteger,primary_key=True,nullable=False),
+			db.Column('player_slot',db.Integer,primary_key=True,nullable=False),
 			db.Column('unitname',db.String,nullable=False),
 			db.Column('item_0',db.Integer,nullable=False),
 			db.Column('item_1',db.Integer,nullable=False),
@@ -223,6 +227,16 @@ class PGDB:
 											~emdr.c.match_details_retrieved))
 		result = self.conn.execute(q).fetchall()
 		return result
+	
+	def insert_dfs(self,df_dict):
+		trans = self.conn.begin()
+		for key,df in df_dict.items():
+			try:	
+				df.to_sql(key,self.conn,schema='Kali',if_exists='append',index=False)
+			except Exception as e:
+				trans.rollback()
+				raise e
+		trans.commit()
 
 	def insert_df(self, table_name, df):
 		df.to_sql(table_name,self.conn,schema='Kali',if_exists='append',index=False)

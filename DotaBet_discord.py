@@ -399,6 +399,9 @@ class BookKeeper(commands.Bot):
 
 			print('checking for replays...'.format(len(live_lobbies)))
 			await self.try_retrieve_replays()
+			perform_import()
+
+
 
 	async def refresh_lobby(self,live_lobby_id):
 		print('lobby found: {}'.format(live_lobby_id))
@@ -589,6 +592,9 @@ async def redistribute_wealth(ctx,*arg):
 
 @bot.command()
 async def import_matches(ctx,*arg):
+	msg = '''```Temp disabled```'''
+	await bot.comm_channel.send(msg)
+	return
 	if ctx.guild is None:
 		await ctx.send('{}, ALL COMMUNICATION MUST NOW BE PUBLIC'.format(ctx.message.author.mention))
 		return

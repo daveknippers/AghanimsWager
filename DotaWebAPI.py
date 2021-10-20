@@ -1,4 +1,4 @@
-import json, os, time, datetime
+import json, os, time, datetime, sys
 from pathlib import Path
 
 import requests
@@ -7,6 +7,9 @@ import pandas as pd
 
 from app_db import PGDB, MATCH_STATUS
 from tokens import STEAM_API_KEY, CONNECTION_STRING
+
+import traceback
+
 
 url_GetMatchDetails = 'https://api.steampowered.com/IDOTA2Match_570/GetMatchDetails/v001/'
 
@@ -100,34 +103,41 @@ def process_match_details(match_json,pgdb):
 		match_json['radiant_win'] = None
 
 	match_df = pd.DataFrame([match_json])
-	pgdb.insert_df('match_details',match_df)
+
+	match_dfs = {}
+	match_dfs['match_details'] = match_df
 
 	if len(bears) > 0:
 		bear_df = pd.DataFrame(bears)
-		pgdb.insert_df('bear_details',bear_df)
+		match_dfs['bear_details'] = bear_df
 
 	if len(players) > 0:
 		players_df = pd.DataFrame(players)
-		pgdb.insert_df('player_match_details',players_df)
+		match_dfs['player_match_details'] = players_df
 
 	if len(ability_upgrades) > 0:
 		abilities_df = pd.DataFrame(ability_upgrades)
-		pgdb.insert_df('ability_details',abilities_df)
+		match_dfs['ability_details'] = abilities_df
 
 	if picks_bans is not None:
 		picks_df = pd.DataFrame(picks_bans)
-		pgdb.insert_df('pick_details',picks_df)
+		match_dfs['pick_details'] = picks_df
+
+	pgdb.insert_dfs(match_dfs)
 		
-def perform_import():
+attempted_this_session = set()
+def perform_import(kill_on_failure=False):
 	db = PGDB(CONNECTION_STRING,'DotaWebAPI')
 	md_path = Path.cwd() / 'match_details' 
 	md_path.mkdir(exist_ok=True)
 	imported_md_path = Path.cwd() / 'imported_match_details' 
 	imported_md_path.mkdir(exist_ok=True)
 	already_imported = list(map(lambda x: x.name, imported_md_path.glob('*.json')))
-	successful = 0
-	unsuccessful = 0
-	for match_file in md_path.glob('*.json'):
+	for match_file in sorted(md_path.glob('*.json')):
+		if match_file in attempted_this_session:
+			print(match_file,'already attempted to import, ignoring')
+			continue
+		attempted_this_session.add(match_file)
 		if match_file.name in already_imported:
 			print(match_file,'already imported, removing')
 			match_file.unlink()
@@ -139,17 +149,17 @@ def perform_import():
 				process_match_details(match_json,db)
 				new_match_file = imported_md_path / match_file.name
 				match_file.rename(new_match_file)
-				successful += 1
 			except:
 				print('error importing',match_file)
-				unsuccessful += 1
-	return successful,unsuccessful
+				traceback.print_exc()
+				if kill_on_failure:
+					sys.exit()
+
 
 if __name__ == '__main__':
-	'''
-	schuck_match_details(6112939577)
-	sys.exit()
-	'''
-	perform_import()
+	#schuck_match_details(6195297952)
+	#sys.exit()
+	perform_import(kill_on_failure=True)
+
 
 
