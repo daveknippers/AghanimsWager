@@ -591,22 +591,6 @@ async def redistribute_wealth(ctx,*arg):
 		await ctx.send('{}, No.'.format(ctx.message.author.mention))
 
 @bot.command()
-async def import_matches(ctx,*arg):
-	msg = '''```Temp disabled```'''
-	await bot.comm_channel.send(msg)
-	return
-	if ctx.guild is None:
-		await ctx.send('{}, ALL COMMUNICATION MUST NOW BE PUBLIC'.format(ctx.message.author.mention))
-		return
-	if ctx.guild and str(ctx.message.channel) != COMM_CHANNEL:
-		return
-	discord_id = ctx.message.author.id
-	successful,unsuccessful = perform_import()
-	msg = '''```Successfully imported {} match detail(s), unsuccessfully imported {} match detail(s)```'''.format(successful,unsuccessful)
-	await bot.comm_channel.send(msg)
-		
-
-@bot.command()
 async def active_bets(ctx,*arg):
 	if ctx.guild is None:
 		await ctx.send('{}, ALL COMMUNICATION MUST NOW BE PUBLIC'.format(ctx.message.author.mention))
