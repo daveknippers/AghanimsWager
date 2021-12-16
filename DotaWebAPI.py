@@ -157,8 +157,8 @@ def perform_import(kill_on_failure=False):
 
 
 if __name__ == '__main__':
-	#schuck_match_details(6195297952)
-	#sys.exit()
+	#schuck_match_details(6289328141)
+	#schuck_match_details(6290918116)
 	perform_import(kill_on_failure=True)
 
 

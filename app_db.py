@@ -518,7 +518,16 @@ LOCK TABLE "Kali".balance_ledger IN ACCESS EXCLUSIVE MODE;'''
 	def check_balance(self,discord_id):
 		s = db.select([self.balance_ledger.c.tokens]).where(self.balance_ledger.c.discord_id == discord_id)
 		if (result := self.conn.execute(s).fetchone()):
-			return result[0]
+			if result[0] == 0:
+				active_bet_df = self.return_active_bets(discord_id)
+				if active_bet_df is None:
+					update = self.balance_ledger.update().values(tokens = 1).where(self.balance_ledger.c.discord_id == discord_id)
+					result = self.conn.execute(update)
+					return 1
+				else:
+					return 0
+			else:
+				return result[0]
 		else:
 			insert = self.balance_ledger.insert().values(discord_id=discord_id,tokens=NEW_PLAYER_STIPEND)
 			result = self.conn.execute(insert)
