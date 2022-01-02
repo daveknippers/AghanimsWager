@@ -271,7 +271,7 @@ class Lobby:
 
 				for msg in format_long('\n'.join(msgs)):
 					await self.comm_channel.send(msg)
-			perform_import()
+			perform_import(pgdb)
 
 	async def announce(self):
 		db_result,columns = pgdb.select_lm(self.lobby_id,self.last_update)

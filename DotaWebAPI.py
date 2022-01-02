@@ -126,8 +126,9 @@ def process_match_details(match_json,pgdb):
 	pgdb.insert_dfs(match_dfs)
 		
 attempted_this_session = set()
-def perform_import(kill_on_failure=False):
-	db = PGDB(CONNECTION_STRING,'DotaWebAPI')
+def perform_import(pgdb=None,kill_on_failure=False):
+	if pgdb is None:
+		pgdb = PGDB(CONNECTION_STRING,'DotaWebAPI')
 	md_path = Path.cwd() / 'match_details' 
 	md_path.mkdir(exist_ok=True)
 	imported_md_path = Path.cwd() / 'imported_match_details' 
@@ -146,7 +147,7 @@ def perform_import(kill_on_failure=False):
 			try:
 				with open(match_file) as f:
 					match_json = json.load(f)
-				process_match_details(match_json,db)
+				process_match_details(match_json,pgdb)
 				new_match_file = imported_md_path / match_file.name
 				match_file.rename(new_match_file)
 			except:
