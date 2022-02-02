@@ -384,7 +384,7 @@ LOCK TABLE "Kali".friends IN ACCESS EXCLUSIVE MODE;'''
 		else:
 			return LP_STATUS.VALID
 
-	def update_lp(self,players):
+	def update_live_players(self,players):
 		lp = self.live_players
 		begin_statement = '''BEGIN WORK;
 	LOCK TABLE "Kali".live_players IN ACCESS EXCLUSIVE MODE;'''
@@ -413,7 +413,7 @@ LOCK TABLE "Kali".friends IN ACCESS EXCLUSIVE MODE;'''
 			else:
 				return LP_STATUS.VALID
 		else:
-			logging.info('no live players found for match_id = {}'.format(match_id))
+			logging.info('no live players stored for match_id = {}'.format(match_id))
 			return LP_STATUS.NOT_FOUND
 
 	def read_lp(self,match_id):
