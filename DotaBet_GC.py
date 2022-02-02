@@ -34,33 +34,7 @@ live_players_processed = defaultdict(lambda: LP_STATUS.NOT_FOUND)
 rp_heroes_processed = set()
 FRIENDS_IN_DB = False
 
-# this function represents my first attempts to parse friend list data to determine when friends are
-# in a game. in the event that valve do something to stop things like Overwolf from working,
-# it might be necessary to use this data instead. one could take out the reference to this
-# call in investigate_ClientPersonaState and the bot would continue working. i'm leaving it in,
-# because the data it collects isn't that large and if it's not broken i don't see a need to 
-# remove it.
-def add_rp_hero(lobby_id,steam_id,rich_presence):
-	if (lobby_id,steam_id) not in rp_heroes_processed:
-		try:
-			param0 = rich_presence['param0']
-			param1 = rich_presence['param1']
-			param2 = rich_presence['param2']
 
-		except KeyError:
-			logging.warning('could not parse rich presence for param[0,1,2] in lobby_id {} steam_id {}'.format(lobby_id,steam_id))
-		else:
-			row = {}
-			row['lobby_id'] = lobby_id
-			row['steam_id'] = steam_id
-			row['param0'] = param0
-			row['param1'] = param1
-			row['param2'] = param2
-			rp_heroes_processed.add((lobby_id,steam_id))
-			if not pgdb.insert_rp(row):
-				msg = 'rp status already in database for lobby_id {} steam_id {}.'.format(lobby_id,steam_id)
-				msg = msg+' this is normal if restarting bot in middle of live games.'
-				logging.warning(msg)
 
 @client.on(EMsg.ClientPersonaState)
 def investigate_ClientPersonaState(msg):
@@ -85,7 +59,6 @@ def investigate_ClientPersonaState(msg):
 						steam_id = f.steam_id
 						if watchable_game_id != 0:
 							source_tv_lobbies.add(watchable_game_id)
-							add_rp_hero(watchable_game_id,steam_id,f.rich_presence)
 					elif status == '#DOTA_RP_HERO_SELECTION' or status == '#DOTA_RP_STRATEGY_TIME':
 						watchable_game_id = int(f.rich_presence['WatchableGameID'])
 						if watchable_game_id != 0:
