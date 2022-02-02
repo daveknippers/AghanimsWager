@@ -14,6 +14,9 @@ import traceback
 url_GetMatchDetails = 'https://api.steampowered.com/IDOTA2Match_570/GetMatchDetails/v001/'
 
 def schuck_match_details(match_id):
+	md_path = Path.cwd() / 'match_details' 
+	md_path.mkdir(exist_ok=True)
+
 	json_match_details = request_match_details(match_id)
 	if not json_match_details:
 		return MATCH_STATUS.UNRESOLVED
