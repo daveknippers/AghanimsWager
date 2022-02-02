@@ -423,8 +423,11 @@ class BookKeeper(commands.Bot):
 
 		self.currently_retrieving_replays = True
 		extended_match_details_path = Path.cwd() / 'extended_match_details'
+		extended_match_details_path.mkdir(exist_ok=True)
 
 		retrieved_extended_match_details_path = Path.cwd() / 'retrieved_extended_match_details'
+		retrieved_extended_match_details_path.mkdir(exist_ok=True)
+
 		ext_match_details = extended_match_details_path.glob('*.json')
 
 		for ext_md_file in ext_match_details:
@@ -437,11 +440,13 @@ class BookKeeper(commands.Bot):
 				self.tried_once.add(ext_md_file)
 
 			lock_file = ext_md_file.parent / (ext_md_file.name + '.lock')
+			json_load_success = False
 			try:
 				with FileLock(lock_file,timeout=5):
 					with open(str(ext_md_file), 'r') as json_file:
 						try:
 							ext_md = json.load(json_file)
+							json_load_success = True
 						except json.decoder.JSONDecodeError as e:
 							# seems like this sometimes goes wrong if the other process
 							# is still writing the json. gonna have to think about best solution.
@@ -450,7 +455,9 @@ class BookKeeper(commands.Bot):
 			except Timeout:
 				print('\tcannot process json {} because of file lock'.format(ext_md_file))
 				continue
-				
+
+			if json_load_success:
+				lock_file.unlink()
 				
 			cluster = ext_md['match']['cluster']
 			app_id = 570

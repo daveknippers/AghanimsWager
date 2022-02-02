@@ -1,14 +1,12 @@
 import logging, datetime, time, json
 from collections import defaultdict
-
 from pathlib import Path
-from enum import Enum, auto
 
 import filelock
 import gevent
 
 from steam.client import SteamClient
-from steam.enums import EPersonaState, EResult
+from steam.enums import EResult
 from steam.enums.emsg import EMsg
 from steam.utils.proto import proto_to_dict
 from dota2.client import Dota2Client
@@ -25,13 +23,19 @@ class DotaBet_GC:
 		self.steam_client = steam_client
 		self.dota_client = dota_client
 		self.db = db
-		self.sleep_time = 15
+
 		self.friends_synced = False
+		self.sleep_time = 15
 		self.extended_match_details_path = Path.cwd() / 'extended_match_details'
 		self.extended_match_details_path.mkdir(exist_ok=True)
+
+		# set of all active games
 		self.active_source_tv_lobbies = set()
+
+		# mapping for friend ids to "watchable" game ids
+		self.friend_game_ids = {}
 		
-		# handles states for different match_ids
+		# handles player pick states for different match_ids
 		self.match_id_status = defaultdict(lambda: LP_STATUS.NOT_FOUND)
 
 		# only check once per session to avoid pissing off the GC
@@ -52,6 +56,7 @@ class DotaBet_GC:
 		last_checked_lobbies = set()
 		self.db.replace_live(last_checked_lobbies) # clear lobbies on first loop
 		while True:
+			# not guaranteed to have friend list 'ready' during other initialization steps
 			if not self.friends_synced:
 				self.SyncFriends()
 			gevent.sleep(self.sleep_time)
@@ -71,42 +76,73 @@ class DotaBet_GC:
 			self.CheckExtendedMatchDetails()
 
 	def UpdateClientPersonaState(self,msg):
-		'''it is possible to use msg to parse changes to individual friends,
-		but i'm just using it as a notice that something in the friend's list
-		has changed and that we should re-generate the active lobby list.
+		'''Fires for every status change in the friend's list. each msg contains the new friend's state.'''
+	
+		# header is always information about your connected bot
+		#logging.info('{}'.format(proto_to_dict(msg.header))) 
+		#logging.info('{}'.format(proto_to_dict(msg.body)))
 
-		this could be done better by actually using the contents of msg'''
+		parsed_msg = proto_to_dict(msg.body)
+		if 'friends' in parsed_msg.keys():
+			for friend in parsed_msg['friends']:
+				steam_id = friend['friendid']
+				try:
+					rich_presence = friend['rich_presence']
+					game_id = friend['gameid']
+					if game_id != 570:
+						self.friend_game_ids[steam_id] = None
+						continue
+				except KeyError:
+					self.friend_game_ids[steam_id] = None
+					continue
+					
+				#logging.info('friend in dota: {}'.format(proto_to_dict(msg.body)))
 
-		#logging.info('{}'.format(proto_to_dict(msg.header)))
-		logging.info('{}'.format(proto_to_dict(msg.body)))
-		
-		if self.steam_client.friends.ready:
-			self.active_source_tv_lobbies.clear()
-			for friend in self.steam_client.friends:
-				if friend.state != EPersonaState.Offline:
+				status = None
+				param0 = None
+				watchable_game_id = None
+				
+				for d in rich_presence:
 					try:
-						status = friend.rich_presence['status']
-						try:
-							if friend.rich_presence['param0'] == '#DOTA_lobby_type_name_lobby':
-								continue
-							if friend.rich_presence['param0'] == '#game_mode_18':
-								continue
-							if friend.rich_presence['param0'] == '#game_mode_23':
-								continue
-						except KeyError:
-							continue
-						if status == '#DOTA_RP_PLAYING_AS':
-							watchable_game_id = int(friend.rich_presence['WatchableGameID'])
-							steam_id = friend.steam_id
-							if watchable_game_id != 0:
-								source_tv_lobbies.add(watchable_game_id)
-						elif status == '#DOTA_RP_HERO_SELECTION' or status == '#DOTA_RP_STRATEGY_TIME':
-							watchable_game_id = int(friend.rich_presence['WatchableGameID'])
-							if watchable_game_id != 0:
-								source_tv_lobbies.add(watchable_game_id)
+						if d['key'] == 'status':
+							status = d['value']
 					except KeyError:
 						pass
-		
+					try:
+						if d['key'] == 'param0':
+							param0 = d['value']
+					except KeyError:
+						pass
+					try:
+						if d['key'] == 'WatchableGameID':
+							watchable_game_id = int(d['value'])
+					except KeyError:
+						pass
+					
+				if status is None or param0 is None or watchable_game_id is None:
+					self.friend_game_ids[steam_id] = None
+					continue
+				'''there's a chance the msg won't contain the correct param0 during drafting / strat time.
+				in this case, the bot will incorrectly assume a disconnect has occured and remove the game
+				from self.active_source_tv_lobbies, which will later prompt the discord bot to 
+				check if the game has finished. this is a rare case, and the game is re-added on next msg.'''
+				if param0 == '#DOTA_lobby_type_name_lobby':
+					self.friend_game_ids[steam_id] = None
+					continue
+				if param0 == '#game_mode_18':
+					self.friend_game_ids[steam_id] = None
+					continue
+				if param0 == '#game_mode_23':
+					self.friend_game_ids[steam_id] = None
+					continue
+
+				if status in ['#DOTA_RP_PLAYING_AS','#DOTA_RP_HERO_SELECTION','#DOTA_RP_STRATEGY_TIME'] and watchable_game_id != 0:
+					self.friend_game_ids[steam_id] = watchable_game_id
+				else:
+					self.friend_game_ids[steam_id] = None
+
+		self.active_source_tv_lobbies = set(filter(lambda y: y is not None,map(lambda x: x[1],self.friend_game_ids.items())))
+
 	def ProcessLobbyStates(self,msg):
 		logging.info('Starting process_lobby_states')
 		query_time = int(time.mktime(datetime.datetime.now().timetuple()))
@@ -121,6 +157,7 @@ class DotaBet_GC:
 				players = game['players']
 				del game['players']
 				self.db.insert_lm(game)
+				# this looks janky but it works. tbh i don't remember why. prototype driven development, no bitching.
 				if self.match_id_status[match_id] == LP_STATUS.NOT_FOUND:
 					self.match_id_status[match_id] = self.db.check_lp(match_id)
 				if self.match_id_status[match_id] == LP_STATUS.NOT_FOUND:
@@ -134,8 +171,6 @@ class DotaBet_GC:
 							p['match_id'] = match_id
 							p['player_num'] = i
 						self.match_id_status[match_id] = self.db.update_live_players(players)
-		else:
-			logging.info('No specific lobbies returned')
 
 	def SyncFriends(self):
 		'''this is synced into the database for use by the discord bot'''
@@ -152,7 +187,7 @@ class DotaBet_GC:
 		game = proto_to_dict(msg)
 		match_id = game['match']['match_id']
 		
-		lock_name = self.extended_match_details_path / '{}_extended.lock'.format(match_id)
+		lock_name = self.extended_match_details_path / '{}_extended.json.lock'.format(match_id)
 		file_name = self.extended_match_details_path / '{}_extended.json'.format(match_id)
 
 		with filelock.FileLock(lock_name):
@@ -187,3 +222,4 @@ if __name__ == "__main__":
 		logging.error('Could not log in')	
 		raise SystemExit
 	steam_client.run_forever()
+
