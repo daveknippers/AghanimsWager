@@ -609,6 +609,11 @@
 "name":"npc_dota_hero_marci",
 "id":136,
 "localized_name":"Marci"
+},
+{
+"name":"npc_dota_hero_primal_beast",
+"id":137,
+"localized_name":"Primal Beast"
 }
 ]
 }
