@@ -22,7 +22,7 @@ def convert_steam_to_account(steam_id):
 
 sqlite_tables = [
 				 "bet_ledger",
-				 #"charity",
+				 "charity",
 				 "balance_ledger",
 				 #"live_lobbies",
 				 "match_status",

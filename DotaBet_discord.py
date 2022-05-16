@@ -602,9 +602,11 @@ async def redistribute_wealth(ctx,*arg):
 
 @bot.command()
 async def active_bets(ctx,*arg):
+	'''
 	if ctx.guild is None:
 		await ctx.send('{}, ALL COMMUNICATION MUST NOW BE PUBLIC'.format(ctx.message.author.mention))
 		return
+	'''
 	if ctx.guild and str(ctx.message.channel) != COMM_CHANNEL:
 		return
 	if len(arg) == 1:
@@ -619,11 +621,13 @@ async def active_bets(ctx,*arg):
 		active_bets_df = pgdb.return_active_bets()
 
 	if active_bets_df is not None and not active_bets_df.empty:
-
+		active_bets_df['amount'] = active_bets_df.groupby(['match_id', 'gambler_id', 'side', 'finalized'])['amount'].transform(sum)
+		del active_bets_df['wager_id']
+		active_bets_df = active_bets_df.drop_duplicates()
 		active_bets_df = pd.merge(active_bets_df,bot.friend_df,how='left',left_on=['gambler_id'],right_on=['discord_id'])
 		active_bets_df['side_str'] = active_bets_df['side'].apply(lambda x: 'Radiant' if x == MATCH_STATUS.RADIANT else 'Dire')
-		active_bets_df['amount_str'] = active_bets_df['amount'].apply(lambda x: str(x))
-		active_bets_df['match_id_str'] = active_bets_df['match_id'].apply(lambda x: str(x))
+		active_bets_df['amount_str'] = active_bets_df['amount'].astype(str)
+		active_bets_df['match_id_str'] = active_bets_df['match_id'].astype(str)
 
 		acc = []
 		for match_id,amount,side,discord_name in active_bets_df[['match_id_str','amount_str','side_str','discord_name']].values:
