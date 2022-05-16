@@ -41,6 +41,9 @@ class DotaBet_GC:
 		# only check once per session to avoid pissing off the GC
 		self.session_check_extended_match_details = set()
 
+		self.last_called = None
+	
+
 		# set-up event handlers
 		self._LobbyLoop = self.dota_client.on('ready')(self.LobbyLoop)
 		self._UpdateClientPersonaState = self.steam_client.on(EMsg.ClientPersonaState)(self.UpdateClientPersonaState)
@@ -54,8 +57,14 @@ class DotaBet_GC:
 	def LobbyLoop(self):
 		logging.info('Starting LobbyLoop')
 		last_checked_lobbies = set()
-		self.db.replace_live(last_checked_lobbies) # clear lobbies on first loop
-		while True:
+
+		if not self.last_called:
+			self.db.replace_live(last_checked_lobbies) # clear lobbies on first loop
+
+		self.last_called = int(time.mktime(datetime.datetime.now().timetuple()))
+		last_called = self.last_called
+
+		while last_called == self.last_called:
 			# not guaranteed to have friend list 'ready' during other initialization steps
 			if not self.friends_synced:
 				self.SyncFriends()
@@ -76,7 +85,7 @@ class DotaBet_GC:
 			self.CheckExtendedMatchDetails()
 
 	def UpdateClientPersonaState(self,msg):
-		'''Fires for every status change in the friend's list. each msg contains the new friend's state.'''
+		'''Fires for every status change in the friend's list. each msg contains the friend's new state.'''
 	
 		# header is always information about your connected bot
 		#logging.info('{}'.format(proto_to_dict(msg.header))) 
@@ -96,7 +105,7 @@ class DotaBet_GC:
 					self.friend_game_ids[steam_id] = None
 					continue
 					
-				#logging.info('friend in dota: {}'.format(proto_to_dict(msg.body)))
+				logging.info('friend in dota: {}'.format(proto_to_dict(msg.body)))
 
 				status = None
 				param0 = None
@@ -122,10 +131,7 @@ class DotaBet_GC:
 				if status is None or param0 is None or watchable_game_id is None:
 					self.friend_game_ids[steam_id] = None
 					continue
-				'''there's a chance the msg won't contain the correct param0 during drafting / strat time.
-				in this case, the bot will incorrectly assume a disconnect has occured and remove the game
-				from self.active_source_tv_lobbies, which will later prompt the discord bot to 
-				check if the game has finished. this is a rare case, and the game is re-added on next msg.'''
+
 				if param0 == '#DOTA_lobby_type_name_lobby':
 					self.friend_game_ids[steam_id] = None
 					continue
@@ -157,7 +163,7 @@ class DotaBet_GC:
 				players = game['players']
 				del game['players']
 				self.db.insert_lm(game)
-				# this looks janky but it works. tbh i don't remember why. prototype driven development, no bitching.
+				# this looks janky but it works. tbh i don't remember why. 
 				if self.match_id_status[match_id] == LP_STATUS.NOT_FOUND:
 					self.match_id_status[match_id] = self.db.check_lp(match_id)
 				if self.match_id_status[match_id] == LP_STATUS.NOT_FOUND:
