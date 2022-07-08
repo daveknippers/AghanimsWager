@@ -161,9 +161,32 @@ def perform_import(pgdb=None,kill_on_failure=False):
 
 
 if __name__ == '__main__':
-	#schuck_match_details(6289328141)
-	#schuck_match_details(6290918116)
+	schuck_match_details(6608324914)
+	schuck_match_details(6608363489)
+	schuck_match_details(6608409880)
+	schuck_match_details(6609649498)
+	schuck_match_details(6609933791)
+	schuck_match_details(6610013247)
+	schuck_match_details(6610054107)
+	schuck_match_details(6610093345)
+	schuck_match_details(6610122183)
+	schuck_match_details(6610154475)
+	schuck_match_details(6610213171)
+	schuck_match_details(6611564844)
+	schuck_match_details(6611600477)
+	schuck_match_details(6611649776)
+	schuck_match_details(6611673811)
+	schuck_match_details(6611705063)
+	schuck_match_details(6611742140)
+	schuck_match_details(6611796135)
+	schuck_match_details(6611821765)
+	schuck_match_details(6611829390)
+	schuck_match_details(6611859728)
+	schuck_match_details(6611923040)
+	schuck_match_details(6611988475)
 	perform_import(kill_on_failure=True)
+
+
 
 
 

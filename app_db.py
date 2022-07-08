@@ -2,6 +2,7 @@ import datetime, time
 
 import sqlalchemy as db
 from sqlalchemy import exc, text, desc
+from sqlalchemy.orm import sessionmaker
 import pandas as pd
 import numpy as np
 
@@ -175,7 +176,9 @@ class PGDB:
 			db.Column('aghanims_scepter',db.Integer,nullable=True),
 			db.Column('aghanims_shard',db.Integer,nullable=True),
 			db.Column('moonshard',db.Integer,nullable=True),
-			db.Column('net_worth',db.BigInteger,nullable=True))
+			db.Column('net_worth',db.BigInteger,nullable=True),
+			db.Column('team_number',db.Integer,nullable=True),
+			db.Column('team_slot',db.Integer,nullable=True))
 
 		self.ability_details = db.Table('ability_details', self.metadata,
 			db.Column('match_id',db.BigInteger,nullable=False),
