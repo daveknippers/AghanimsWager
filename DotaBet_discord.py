@@ -30,6 +30,8 @@ COMM_CHANNEL = 'dota-bet'
 
 pgdb = PGDB(CONNECTION_STRING,'DotaBet_discord')
 
+navy_seals = '''What the fuck did you just fucking say about me, you little bitch? I'll have you know I graduated top of my class in the Navy Seals, and I've been involved in numerous secret raids on Al-Quaeda, and I have over 300 confirmed kills. I am trained in gorilla warfare and I'm the top sniper in the entire US armed forces. You are nothing to me but just another target. I will wipe you the fuck out with precision the likes of which has never been seen before on this Earth, mark my fucking words. You think you can get away with saying that shit to me over the Internet? Think again, fucker. As we speak I am contacting my secret network of spies across the USA and your IP is being traced right now so you better prepare for the storm, maggot. The storm that wipes out the pathetic little thing you call your life. You're fucking dead, kid. I can be anywhere, anytime, and I can kill you in over seven hundred ways, and that's just with my bare hands. Not only am I extensively trained in unarmed combat, but I have access to the entire arsenal of the United States Marine Corps and I will use it to its full extent to wipe your miserable ass off the face of the continent, you little shit. If only you could have known what unholy retribution your little "clever" comment was about to bring down upon you, maybe you would have held your fucking tongue. But you couldn't, you didn't, and now you're paying the price, you goddamn idiot. I will shit fury all over you and you will drown in it. You're fucking dead, kiddo.'''
+
 with open('heroes.json') as f:
 	hero_data = json.load(f)
 	hero_data = dict(map(lambda x: (x['id'],(x['name'],x['localized_name'])),hero_data['heroes']))
@@ -272,7 +274,11 @@ class Lobby:
 
 				for msg in format_long('\n'.join(msgs)):
 					await self.comm_channel.send(msg)
-			perform_import(pgdb)
+			failed_imports = perform_import(pgdb)
+			for f in failed_imports:
+				error_msg = '```Failed importing stats from match id {}```'.format(f.stem)
+				await self.comm_channel.send(error_msg)
+				
 
 	async def announce(self):
 		db_result,columns = pgdb.select_lm(self.lobby_id,self.last_update)
@@ -489,6 +495,7 @@ bot = BookKeeper(command_prefix='!', description='DotaBet')
 
 @bot.command()
 async def add_steam_id(ctx,*arg):
+	"""Associate your steam id with your discord id."""
 	if ctx.guild is None:
 		await ctx.send('{}, ALL COMMUNICATION MUST NOW BE PUBLIC'.format(ctx.message.author.mention))
 		return
@@ -508,6 +515,7 @@ async def add_steam_id(ctx,*arg):
 
 @bot.command()
 async def hi(ctx,*arg):
+	"""?"""
 	if ctx.guild is None:
 		await ctx.send('{}, ALL COMMUNICATION MUST NOW BE PUBLIC'.format(ctx.message.author.mention))
 		return
@@ -516,6 +524,7 @@ async def hi(ctx,*arg):
 
 @bot.command()
 async def sacrifice(ctx,*arg):
+	"""Sacrifice Nick."""
 	if ctx.guild is None:
 		await ctx.send('{}, ALL COMMUNICATION MUST NOW BE PUBLIC'.format(ctx.message.author.mention))
 		return
@@ -524,6 +533,7 @@ async def sacrifice(ctx,*arg):
 
 @bot.command()
 async def balance(ctx,*arg):
+	"""Display your balance."""
 	if ctx.guild is None:
 		await ctx.send('{}, ALL COMMUNICATION MUST NOW BE PUBLIC'.format(ctx.message.author.mention))
 		return
@@ -535,6 +545,85 @@ async def balance(ctx,*arg):
 	else:
 		msg = '{0.author.mention}, you have {1} {2}'.format(ctx.message,amount,CURRENCY)
 	await ctx.send(msg)
+
+
+
+
+
+@bot.command()
+async def tip(ctx,*arg):
+	if len(arg) != 1:
+		await ctx.send('Need to specify tipee.')
+		return
+	else:
+		tipee_id = arg[0]
+	regex = re.compile(r'^<@(\d{18}|\d{17})>$')
+	matches = regex.search(tipee_id)
+	if matches is None:
+		await ctx.send('Cannot parse user {}.'.format(arg[0]))
+		return
+	else:
+		tipee_id = matches.groups()[0]
+	try:
+		tipee_id = int(tipee_id)
+	except ValueError:
+		await ctx.send('Cannot parse user {}.'.format(arg[0]))
+		return
+
+	tipper_id = ctx.message.author.id
+	if tipper_id == tipee_id:
+		return
+
+	if pgdb.check_user_exists(tipee_id):
+		tip_successful = pgdb.tip(tipper_id,tipee_id)
+		if tip_successful:
+			await ctx.send("{} sent {} a salty tip.".format(ctx.message.author.mention,arg[0]))
+		else:
+			await ctx.send("{}, you're too poor.".format(ctx.message.author.mention))
+	else:
+		await ctx.send("User {} isn't participating in Aghanim's Wager.".format(arg[0]))
+
+
+
+
+
+
+@bot.command()
+async def last(ctx,x_matches='10'):
+	"""Display your last x matches,  1 <= x <= 50"""
+	if ctx.guild is None:
+		await ctx.send('{}, ALL COMMUNICATION MUST NOW BE PUBLIC'.format(ctx.message.author.mention))
+		return
+	if ctx.guild and str(ctx.message.channel) != COMM_CHANNEL:
+		return
+	try:
+		x_matches = int(x_matches)
+		if x_matches < 1:
+			for msg in format_long(navy_seals):
+				await ctx.send(msg)
+				return
+		if x_matches > 50:
+			for msg in format_long(navy_seals):
+				await ctx.send(msg)
+				return
+	except ValueError:
+		await ctx.send('Invalid syntax, try "!last x" where x is greater than 0 and less than or equal to 50')
+		return
+		
+	lastten_df = pgdb.lastx(ctx.message.author.id,x_matches)
+	if len(lastten_df) > 0:
+		lastten_df['hero'] = lastten_df['hero_id'].apply(lambda x: hero_data[x][1])
+		del lastten_df['hero_id']
+		lastten_df = lastten_df[['match_id','hero','kills','deaths','assists','hero_damage','net_worth']]
+		mean_k = lastten_df['kills'].mean()
+		mean_d = lastten_df['deaths'].mean()
+		mean_a = lastten_df['assists'].mean()
+		s = "```" + str(ctx.message.author) + ' average K/D/A: {:.1f} / {:.1f} / {:.1f}'.format(mean_k,mean_d,mean_a) + "```"
+		for msg in format_long(lastten_df.to_string()):
+			await ctx.send(msg)
+		await ctx.send(s)
+	else:
+		await ctx.send('No matches found')
 
 
 MAX_MSG_LEN = 2000-6
@@ -553,6 +642,7 @@ def format_long(msg):
 
 @bot.command()
 async def leaderboard(ctx,*arg):
+	"""Display leaderboard."""
 	if ctx.guild is None:
 		await ctx.send('{}, ALL COMMUNICATION MUST NOW BE PUBLIC'.format(ctx.message.author.mention))
 		return
@@ -570,6 +660,7 @@ async def leaderboard(ctx,*arg):
 		
 @bot.command()
 async def feederboard(ctx,*arg):
+	"""Display the cooler leaderboard."""
 	if ctx.guild is None:
 		await ctx.send('{}, ALL COMMUNICATION MUST NOW BE PUBLIC'.format(ctx.message.author.mention))
 		return
@@ -588,6 +679,7 @@ async def feederboard(ctx,*arg):
 
 @bot.command()
 async def redistribute_wealth(ctx,*arg):
+	"""Spread the love."""
 	if ctx.guild is None:
 		await ctx.send('{}, ALL COMMUNICATION MUST NOW BE PUBLIC'.format(ctx.message.author.mention))
 		return
@@ -602,11 +694,11 @@ async def redistribute_wealth(ctx,*arg):
 
 @bot.command()
 async def active_bets(ctx,*arg):
-	'''
-	if ctx.guild is None:
-		await ctx.send('{}, ALL COMMUNICATION MUST NOW BE PUBLIC'.format(ctx.message.author.mention))
-		return
-	'''
+	"""Show currently active bets."""
+
+	#if ctx.guild is None:
+	#	await ctx.send('{}, ALL COMMUNICATION MUST NOW BE PUBLIC'.format(ctx.message.author.mention))
+	#	return
 	if ctx.guild and str(ctx.message.channel) != COMM_CHANNEL:
 		return
 	if len(arg) == 1:
@@ -640,6 +732,7 @@ async def active_bets(ctx,*arg):
 		
 @bot.command()
 async def bet(ctx,*arg):
+	"""Make a wager on a match."""
 	if ctx.guild is None:
 		await ctx.send('{}, ALL COMMUNICATION MUST NOW BE PUBLIC'.format(ctx.message.author.mention))
 		return

@@ -10,7 +10,7 @@ import logging
 from enum import Enum, auto, IntEnum
 
 NEW_PLAYER_STIPEND = 500
-AUTOBET = 50
+AUTOBET = 250
 HOUSE_BET = 500
 WAIT_REPLAY = 1200
 
@@ -446,7 +446,52 @@ LOCK TABLE "Kali".friends IN ACCESS EXCLUSIVE MODE;'''
 		bl = self.balance_ledger
 		s = db.select([bl.c.discord_id,bl.c.tokens]).where(bl.c.discord_id > 0).order_by(desc(bl.c.tokens))
 		return self.conn.execute(s).fetchall()
-	
+
+
+	def lastx(self,discord_id,x=10):
+		lastten_query = '''SELECT "Kali".player_match_details.* 
+FROM "Kali".discord_ids 
+LEFT OUTER JOIN "Kali".player_match_details 
+ON "Kali".discord_ids.account_id = "Kali".player_match_details.account_id 
+WHERE "Kali".discord_ids.discord_id = :discord_id
+ORDER BY match_id DESC
+LIMIT :last_x;'''
+		lastten_query = text(lastten_query).bindparams(discord_id = discord_id,last_x = x)
+		result = self.conn.execute(lastten_query).fetchall()
+		lastten_df = pd.DataFrame(result)
+		del lastten_df['account_id']
+		del lastten_df['player_slot']
+		del lastten_df['item_0']
+		del lastten_df['item_1']
+		del lastten_df['item_2']
+		del lastten_df['item_3']
+		del lastten_df['item_4']
+		del lastten_df['item_5']
+		del lastten_df['backpack_0']
+		del lastten_df['backpack_1']
+		del lastten_df['backpack_2']
+		del lastten_df['item_neutral']
+		del lastten_df['leaver_status']
+		del lastten_df['team_slot']
+		del lastten_df['gold_per_min']
+		del lastten_df['xp_per_min']
+		del lastten_df['scaled_hero_damage']
+		del lastten_df['scaled_tower_damage']
+		del lastten_df['scaled_hero_healing']
+		del lastten_df['aghanims_scepter']
+		del lastten_df['aghanims_shard']
+		del lastten_df['moonshard']
+		del lastten_df['gold']
+		del lastten_df['gold_spent']
+		del lastten_df['team_number']
+		del lastten_df['hero_healing']
+		del lastten_df['tower_damage']
+		del lastten_df['level']
+		del lastten_df['last_hits']
+		del lastten_df['denies']
+
+		return lastten_df
+
 	def feederboard(self):
 		q = '''with T1 as (
 select discord_id, match_id, deaths, row_number() over (partition by discord_id order by match_id desc) as rownum
@@ -517,6 +562,12 @@ LOCK TABLE "Kali".balance_ledger IN ACCESS EXCLUSIVE MODE;'''
 
 		return 'Rejoice, My Comrades! {} golden salt has been redistributed.'.format(all_tax_per_person)
 
+
+	def check_user_exists(self,discord_id):
+		s = db.select([self.balance_ledger.c.discord_id]).where(self.balance_ledger.c.discord_id == discord_id)
+		if (result := self.conn.execute(s).fetchone()):
+			return True
+		return False
 
 	def check_balance(self,discord_id):
 		s = db.select([self.balance_ledger.c.tokens]).where(self.balance_ledger.c.discord_id == discord_id)
@@ -832,3 +883,28 @@ VALUES (:match_id, :gambler_id, :side, :amount, FALSE)''')
 		else:
 			self.insert_bet_helper(match_id,discord_id,side,amount,new_balance)
 			return 'bet {} CURRENCY on {} win for match id {}.'.format(amount,side.name.lower().title(),match_id)
+
+	def tip(self,tipper_id,tipee_id):
+
+		balance = self.check_balance(tipper_id)
+		if balance < 2:
+			return False
+
+		statement = []
+		begin = '''BEGIN WORK;
+LOCK TABLE "Kali".balance_ledger IN ACCESS EXCLUSIVE MODE;'''
+		statement.append(begin)
+
+		update_balance_1 = text('UPDATE "Kali".balance_ledger SET tokens = tokens - 1 WHERE discord_id = :discord_id')
+		update_balance_2 = text('UPDATE "Kali".balance_ledger SET tokens = tokens + 1 WHERE discord_id = :discord_id')
+
+		update_wager_1_sql = str(update_balance_1.bindparams(discord_id = tipper_id).compile(compile_kwargs={"literal_binds": True}))+';'
+		statement.append(update_wager_1_sql)
+		update_wager_2_sql = str(update_balance_2.bindparams(discord_id = tipee_id).compile(compile_kwargs={"literal_binds": True}))+';'
+		statement.append(update_wager_2_sql)
+
+		end = 'COMMIT WORK;'
+		statement.append(end)
+		statement = '\n'.join(statement)
+		self.conn.execute(statement)
+		return True
