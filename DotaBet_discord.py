@@ -589,7 +589,7 @@ async def tip(ctx,*arg):
 
 
 @bot.command()
-async def last(ctx,x_matches='10'):
+async def last(ctx,x_matches='10',user_id=None):
 	"""Display your last x matches,  1 <= x <= 50"""
 	if ctx.guild is None:
 		await ctx.send('{}, ALL COMMUNICATION MUST NOW BE PUBLIC'.format(ctx.message.author.mention))
@@ -610,15 +610,39 @@ async def last(ctx,x_matches='10'):
 		await ctx.send('Invalid syntax, try "!last x" where x is greater than 0 and less than or equal to 50')
 		return
 		
-	lastten_df = pgdb.lastx(ctx.message.author.id,x_matches)
+	if user_id is not None:
+		user = user_id
+		regex = re.compile(r'^<@(\d{18}|\d{17})>$')
+		matches = regex.search(user_id)
+		if matches is None:
+			await ctx.send('Cannot parse user {}.'.format(arg[0]))
+			return
+		else:
+			user_id = matches.groups()[0]
+		try:
+			user_id = int(user_id)
+		except ValueError:
+			await ctx.send('Cannot parse user {}.'.format(arg[0]))
+			return
+		user_id_repr = await bot.cached_user(user_id)
+	else:
+		user = ctx.message.author
+		user_id = ctx.message.author.id
+		user_id_repr = ctx.message.author
+
+	lastten_df = pgdb.lastx(user_id,x_matches)
 	if len(lastten_df) > 0:
-		lastten_df['hero'] = lastten_df['hero_id'].apply(lambda x: hero_data[x][1])
+		try:
+			lastten_df['hero'] = lastten_df['hero_id'].apply(lambda x: hero_data[x][1])
+		except KeyError:
+			await ctx.send('{}, no games were returned, are you sure {} has public stats enabled?'.format(ctx.message.author.mention,user))
+			return
 		del lastten_df['hero_id']
 		lastten_df = lastten_df[['match_id','hero','kills','deaths','assists','hero_damage','net_worth']]
 		mean_k = lastten_df['kills'].mean()
 		mean_d = lastten_df['deaths'].mean()
 		mean_a = lastten_df['assists'].mean()
-		s = "```" + str(ctx.message.author) + ' average K/D/A: {:.1f} / {:.1f} / {:.1f}'.format(mean_k,mean_d,mean_a) + "```"
+		s = "```" + str(user_id_repr) + ' average K/D/A: {:.1f} / {:.1f} / {:.1f}'.format(mean_k,mean_d,mean_a) + "```"
 		for msg in format_long(lastten_df.to_string()):
 			await ctx.send(msg)
 		await ctx.send(s)
