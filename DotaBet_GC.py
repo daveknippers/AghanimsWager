@@ -54,6 +54,10 @@ class DotaBet_GC:
 		# the disconnect/reconnect code in the steam/dota2 packages doesn't seem to work properly.
 		#self._HandleDisconnect = self.steam_client.on('disconnect')(self.HandleDisconnect)
 
+		# rich presence status types we're interested in tracking
+		self.track_lobby_types = ['#DOTA_lobby_type_name_unranked', 
+									'#DOTA_lobby_type_name_ranked']
+
 	def LobbyLoop(self):
 		logging.info('Starting LobbyLoop')
 		last_checked_lobbies = set()
@@ -141,6 +145,25 @@ class DotaBet_GC:
 				if param0 == '#game_mode_23':
 					self.friend_game_ids[steam_id] = None
 					continue
+				if param0 == '#game_mode_23':
+					self.friend_game_ids[steam_id] = None
+					continue
+				if param0 == '#game_mode_lobby_name_20':
+					self.friend_game_ids[steam_id] = None
+					continue
+				if param0 == '#game_mode_lobby_name_7':
+					self.friend_game_ids[steam_id] = None
+					continue
+				if param0 == '#game_mode_lobby_name_8':
+					self.friend_game_ids[steam_id] = None
+					continue
+				if param0 == '#game_mode_lobby_name_9':
+					self.friend_game_ids[steam_id] = None
+					continue
+				if param0 == '#game_mode_lobby_name_11':
+					self.friend_game_ids[steam_id] = None
+					continue
+					
 
 				if status in ['#DOTA_RP_PLAYING_AS','#DOTA_RP_HERO_SELECTION','#DOTA_RP_STRATEGY_TIME'] and watchable_game_id != 0:
 					self.friend_game_ids[steam_id] = watchable_game_id

@@ -106,6 +106,10 @@ def process_match_details(match_json,pgdb):
 		match_json['radiant_win'] = None
 
 	match_df = pd.DataFrame([match_json])
+	if 'server_ip' in match_df.columns:
+		del match_df['server_ip']
+	if 'server_port' in match_df.columns:
+		del match_df['server_port']
 
 	match_dfs = {}
 	match_dfs['match_details'] = match_df
@@ -132,6 +136,7 @@ attempted_this_session = set()
 def perform_import(pgdb=None,kill_on_failure=False):
 	if pgdb is None:
 		pgdb = PGDB(CONNECTION_STRING,'DotaWebAPI')
+	fail_list = []
 	md_path = Path.cwd() / 'match_details' 
 	md_path.mkdir(exist_ok=True)
 	imported_md_path = Path.cwd() / 'imported_match_details' 
@@ -156,14 +161,18 @@ def perform_import(pgdb=None,kill_on_failure=False):
 			except:
 				print('error importing',match_file)
 				traceback.print_exc()
+				fail_list.append(match_file)
 				if kill_on_failure:
 					sys.exit()
+	return fail_list
+
 
 
 if __name__ == '__main__':
-	#schuck_match_details(6289328141)
-	#schuck_match_details(6290918116)
+	schuck_match_details(6805840122)
 	perform_import(kill_on_failure=True)
+
+
 
 
 
