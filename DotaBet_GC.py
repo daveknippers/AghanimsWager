@@ -55,8 +55,8 @@ class DotaBet_GC:
 		#self._HandleDisconnect = self.steam_client.on('disconnect')(self.HandleDisconnect)
 
 		# rich presence status types we're interested in tracking
-		self.track_lobby_types = ['#DOTA_lobby_type_name_unranked', 
-									'#DOTA_lobby_type_name_ranked']
+		#self.track_lobby_types = ['#DOTA_lobby_type_name_unranked', 
+		#							'#DOTA_lobby_type_name_ranked']
 
 	def LobbyLoop(self):
 		logging.info('Starting LobbyLoop')
