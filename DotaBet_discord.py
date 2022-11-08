@@ -481,14 +481,14 @@ class BookKeeper(commands.Bot):
 							if chunk: # filter out keep-alive new chunks
 								f.write(chunk)
 					print('\treplay {} downloaded'.format(replay_file.name))
+					new_match_file = retrieved_extended_match_details_path / ext_md_file.name
+					ext_md_file.rename(new_match_file)
 				except (requests.ConnectionError, requests.Timeout, requests.RequestException):
 					print('try_retrieve_replays {} failed'.format(replay_url))
 					continue
 			else:
 				print('\t!!! replay already exists')
 
-			new_match_file = retrieved_extended_match_details_path / ext_md_file.name
-			ext_md_file.rename(new_match_file)
 		self.currently_retrieving_replays = False
 
 bot = BookKeeper(command_prefix='!', description='DotaBet')

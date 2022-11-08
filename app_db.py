@@ -9,10 +9,12 @@ import numpy as np
 import logging
 from enum import Enum, auto, IntEnum
 
-NEW_PLAYER_STIPEND = 500
+NEW_PLAYER_STIPEND = 1000
 AUTOBET = 250
 HOUSE_BET = 500
 WAIT_REPLAY = 1200
+
+SALT_MINE = 50
 
 class MATCH_STATUS(IntEnum):
 	UNRESOLVED = auto()
@@ -572,14 +574,14 @@ LOCK TABLE "Kali".balance_ledger IN ACCESS EXCLUSIVE MODE;'''
 	def check_balance(self,discord_id):
 		s = db.select([self.balance_ledger.c.tokens]).where(self.balance_ledger.c.discord_id == discord_id)
 		if (result := self.conn.execute(s).fetchone()):
-			if result[0] == 0:
+			if result[0] < SALT_MINE:
 				active_bet_df = self.return_active_bets(discord_id)
 				if active_bet_df is None:
-					update = self.balance_ledger.update().values(tokens = 1).where(self.balance_ledger.c.discord_id == discord_id)
+					update = self.balance_ledger.update().values(tokens = SALT_MINE).where(self.balance_ledger.c.discord_id == discord_id)
 					result = self.conn.execute(update)
-					return 1
+					return SALT_MINE
 				else:
-					return 0
+					return result[0]
 			else:
 				return result[0]
 		else:
@@ -887,7 +889,7 @@ VALUES (:match_id, :gambler_id, :side, :amount, FALSE)''')
 	def tip(self,tipper_id,tipee_id):
 
 		balance = self.check_balance(tipper_id)
-		if balance < 2:
+		if balance < SALT_MINE+1:
 			return False
 
 		statement = []
