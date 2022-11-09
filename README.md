@@ -7,6 +7,6 @@ This project is two parts:
 
 If you're here you're probably interested in the first part, which is in the file `DotaBet_gc.py`. This can run independently of the Discord bot. You'll need a postgres database with a schema named `Kali` to hook it all up. 
 
-With the setup the code requires and just how bad parts of the code base are, I don't really ever expect to have this project as something people can run their own instance of. I'm making it available so that someone might be able to take DotaBet_GC and adapt it to their own purpose. I hardcoded too much of the SQL and I'm too lazy to change it. If you REALLY want to try, you can set the database credentials and the credentials of your steam account in the file `tokens.py`. I'm willing to field questions so long as they're specific.
+With the setup the code requires and just how bad parts of the code base are, I don't really ever expect to have the discord bot as something people will run their own instance of. I hardcoded too much of the SQL and I'm too lazy to change it. If you REALLY want to try, you can set the database credentials and the credentials of your steam account in the file `tokens.py`. I'm willing to field questions so long as they're specific.
 
 
