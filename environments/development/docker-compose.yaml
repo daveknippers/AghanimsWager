@@ -1,0 +1,41 @@
+version: '3'
+services:
+  postgres:
+    image: postgres:bullseye
+    ports:
+      - "5432:5432"
+    env_file:
+      - .postgres-env
+    volumes:
+     - ../../postgres-db/data:/var/lib/postgresql/data
+      # The init script will be executed when the database is first run
+     - ../../postgres-db/dotabet_2023-02-07.sql:/docker-entrypoint-initdb.d/init.sql
+  webapi:
+    build:
+      context: ../../csharp-ef-webapi
+      args:
+        configuration: Development
+    ports:
+      - "5001:5001"
+    env_file:
+      - .webapi-env
+    volumes:
+     - ../../csharp-ef-webapi/dev-cert:/https/
+    depends_on:
+      - postgres
+  spa:
+    build:
+      context: ../../vue-microfrontend
+      args:
+        nginx_config: dev-nginx.conf
+        build_type: build-test
+    ports:
+      - "80:80"
+      - "443:443"
+    links:
+      - webapi:webapi
+    volumes:
+      - ./ssl_certs:/etc/letsencrypt/live/aghanimswager.com
+    depends_on:
+      - postgres
+      - webapi
