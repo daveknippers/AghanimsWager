@@ -169,7 +169,7 @@ def perform_import(pgdb=None,kill_on_failure=False):
 
 
 if __name__ == '__main__':
-	schuck_match_details(6835699099)
+	schuck_match_details(6927188087)
 	perform_import(kill_on_failure=True)
 
 

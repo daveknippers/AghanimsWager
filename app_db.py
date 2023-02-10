@@ -667,6 +667,9 @@ AND NOT EXISTS (SELECT FROM "Kali".charity AS ch WHERE bl.wager_id = ch.wager_id
 		else:
 			bets_df = None
 
+		total_losses = 0
+		player_loss_payouts = []
+
 		# seperate 'free' bets from user-placed bets so that free bets won't be refuned on cancelled match
 		if status == int(MATCH_STATUS.ERROR):
 			if bets_df is not None:
@@ -676,15 +679,32 @@ AND NOT EXISTS (SELECT FROM "Kali".charity AS ch WHERE bl.wager_id = ch.wager_id
 												discord_id = int(gambler_id)).compile(compile_kwargs={"literal_binds": True}))+';'
 					statement.append(update_wager_sql)
 		else:
+			loser_player_gamblers = 0
+
+			if charity_bets_df is not None:
+				for (gambler_id,side) in charity_bets_df[['gambler_id','side']].values:
+					if status != side: 
+						loser_player_gamblers += 1
 
 			if bets_df is not None:
 				for (gambler_id,amount,side) in bets_df[['gambler_id','amount','side']].values:
 					if status == side: 
-						amount = int(amount)*2
+						winning_amount = int(amount)*2
 						update_balance = text('UPDATE "Kali".balance_ledger SET tokens = tokens + :tokens WHERE discord_id = :discord_id')
-						update_balance_sql = str(update_balance.bindparams(tokens = amount,
+						update_balance_sql = str(update_balance.bindparams(tokens = winning_amount,
 													discord_id = int(gambler_id)).compile(compile_kwargs={"literal_binds": True}))+';'
 						statement.append(update_balance_sql)
+
+						bonus_amount = int(0.1*loser_player_gamblers*amount)
+						if bonus_amount > 0:
+							update_balance = text('UPDATE "Kali".balance_ledger SET tokens = tokens + :tokens WHERE discord_id = :discord_id')
+							update_balance_sql = str(update_balance.bindparams(tokens = bonus_amount,
+														discord_id = int(gambler_id)).compile(compile_kwargs={"literal_binds": True}))+';'
+							statement.append(update_balance_sql)
+
+							player_loss_payouts.append((gambler_id,bonus_amount))
+					else:
+						total_losses += int(amount)
 
 			if charity_bets_df is not None:
 				for (gambler_id,amount,side) in charity_bets_df[['gambler_id','amount','side']].values:
@@ -693,6 +713,13 @@ AND NOT EXISTS (SELECT FROM "Kali".charity AS ch WHERE bl.wager_id = ch.wager_id
 						update_balance = text('UPDATE "Kali".balance_ledger SET tokens = tokens + :tokens WHERE discord_id = :discord_id')
 						update_balance_sql = str(update_balance.bindparams(tokens = amount, discord_id = int(gambler_id)).compile(compile_kwargs={"literal_binds": True}))+';'
 						statement.append(update_balance_sql)
+
+						amount = int(total_losses*0.2)
+						if amount > 0:
+							update_balance = text('UPDATE "Kali".balance_ledger SET tokens = tokens + :tokens WHERE discord_id = :discord_id')
+							update_balance_sql = str(update_balance.bindparams(tokens = amount, discord_id = int(gambler_id)).compile(compile_kwargs={"literal_binds": True}))+';'
+							statement.append(update_balance_sql)
+							player_loss_payouts.append((gambler_id,amount))
 					
 		ms_update = text('UPDATE "Kali".match_status SET status = :status WHERE match_id = :match_id')
 		ms_update_sql = str(ms_update.bindparams(status = int(status), match_id = match_id).compile(compile_kwargs={"literal_binds": True}))+';'
@@ -703,7 +730,7 @@ AND NOT EXISTS (SELECT FROM "Kali".charity AS ch WHERE bl.wager_id = ch.wager_id
 		print(statement)
 		self.conn.execute(statement)
 
-		return bets_df,charity_bets_df
+		return bets_df,charity_bets_df,player_loss_payouts
 
 	def insert_match_status(self,match_id,match_players):
 		query_time = int(time.mktime(datetime.datetime.now().timetuple()))

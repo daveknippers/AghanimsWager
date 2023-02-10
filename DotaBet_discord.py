@@ -231,7 +231,7 @@ class Lobby:
 			print('match id {} winner is {}'.format(self.match_id,status))
 			pgdb.request_extended_match_details(self.match_id)
 			await self.match_obj.announce_winner(status)
-			bets_df,charity_df = pgdb.update_match_status(self.match_id,status)
+			bets_df,charity_df,player_loss_payouts = pgdb.update_match_status(self.match_id,status)
 
 			if status == MATCH_STATUS.ERROR:
 				if bets_df is None or bets_df.empty:
@@ -251,6 +251,8 @@ class Lobby:
 				msgs = ['********************************************\nMatch {} complete. Winner: {}'.format(self.match_id,LOCALIZED_STATUS[status])]
 				winners = []
 				losers = []
+				bonus = []
+
 				if bets_df is not None and not bets_df.empty:
 					for (gambler_id,amount,side) in bets_df[['gambler_id','amount','side']].values:
 						user = await self.client.cached_user(gambler_id)
@@ -267,8 +269,16 @@ class Lobby:
 						else:
 							losers.append(' LOSER: {:12d} | {}'.format(amount,user.name))
 
+				for (gid,amount) in player_loss_payouts:
+					user = await self.client.cached_user(gid)
+					bonus.append(' BONUS: {:12d} | {}'.format(amount,user.name))
+
+
 				msgs.extend(winners)
+				msgs.append('')
 				msgs.extend(losers)
+				msgs.append('')
+				msgs.extend(bonus)
 
 				for msg in format_long('\n'.join(msgs)):
 					await self.comm_channel.send(msg)
