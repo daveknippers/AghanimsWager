@@ -10,3 +10,7 @@ If you're here you're probably interested in the first part, which is in the fil
 With the setup the code requires and just how bad parts of the code base are, I don't really ever expect to have the discord bot as something people will run their own instance of. I hardcoded too much of the SQL and I'm too lazy to change it. If you REALLY want to try, you can set the database credentials and the credentials of your steam account in the file `tokens.py`. I'm willing to field questions so long as they're specific.
 
 
+### How to use Nick's abomination
+`cd environments/development`
+`docker-compose build`
+`docker-compose up`

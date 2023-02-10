@@ -23,6 +23,23 @@ if (builder.Environment.IsDevelopment())
     );
 }
 
+if (builder.Environment.IsProduction())
+{
+    //Set CORS
+    builder.Services.AddCors(
+        options =>
+        {
+            options.AddPolicy(name: vueFrontEndOrigins,
+                                policy =>
+                                {
+                                    policy.WithOrigins("https://localhost:5001")
+                                        .AllowAnyHeader()
+                                        .WithMethods("GET","POST")
+                                        .AllowCredentials();
+                                });
+        }
+    );
+}
 
 // Add Database
 builder.Services.AddDbContextFactory<AghanimsWagerContext>();
