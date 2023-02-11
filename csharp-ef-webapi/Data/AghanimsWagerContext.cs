@@ -98,4 +98,6 @@ public class AghanimsWagerContext : DbContext
 
         }
     }
+
+    public DbSet<csharp_ef_webapi.Models.DiscordIds> DiscordIds { get; set; }
 }

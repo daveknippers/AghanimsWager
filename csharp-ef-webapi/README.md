@@ -4,10 +4,14 @@ The connection string to the postgres database is in the appsettings.json, but i
 
 ### Container setup
 SSL cert bullshit
-dotnet dev-certs https -ep %USERPROFILE%\.aspnet\https\aspnetapp.pfx -p <CREDENTIAL_PLACEHOLDER>
+dotnet dev-certs https -ep %USERPROFILE%\.aspnet\https\aspnetapp.pfx --format pem -np
 dotnet dev-certs https --trust
 
 ### Local Development
 (Powershell)
 docker build . -t aghanims-wager-webapi
 docker run -p 5001:5001 -e ASPNETCORE_HTTPS_PORT=5001 -e ASPNETCORE_Kestrel__Certificates__Default__Password="<CREDENTIAL_PLACEHOLDER>" -e ASPNETCORE_Kestrel__Certificates__Default__Path=/https/aspnetapp.pfx -v ${PWD}\dev-cert:/https/ -e SQL_USER=<sqluser> -e SQL_PASSWORD=<sqluser>  aghanims-wager-webapi
+
+### Adding new controllers
+Create a model of what you need then
+` dotnet aspnet-codegenerator controller -name BalanceLedgerController -async -api -m BalanceLedger -dc AghanimsWagerContext -outDir Controllers`
