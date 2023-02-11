@@ -15,3 +15,6 @@ docker run -p 5001:5001 -e ASPNETCORE_HTTPS_PORT=5001 -e ASPNETCORE_Kestrel__Cer
 ### Adding new controllers
 Create a model of what you need then
 ` dotnet aspnet-codegenerator controller -name BalanceLedgerController -async -api -m BalanceLedger -dc AghanimsWagerContext -outDir Controllers`
+
+### Adding new migrations
+`dotnet ef database migrations add <MigrationName> --context AghanimsWagerContext --output-dir Migrations`

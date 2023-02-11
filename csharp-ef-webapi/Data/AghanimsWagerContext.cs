@@ -21,11 +21,17 @@ public class AghanimsWagerContext : DbContext
         options.UseNpgsql(conn_string);
     }
     public DbSet<BalanceLedger> BalanceLedger { get; set; }
+    public DbSet<DiscordIds> DiscordIds { get; set; }
+    public DbSet<PlayerMatchDetails> PlayerMatchDetails { get; set; }
+    public DbSet<MatchStatus> MatchStatus { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema("Kali");
-        modelBuilder.Entity<BalanceLedger>().ToTable("balance_ledger","Kali");
+        modelBuilder.Entity<BalanceLedger>().ToTable("balance_ledger", "Kali");
+
+        modelBuilder.Entity<PlayerMatchDetails>()
+            .HasKey(pmd => new { pmd.MatchId, pmd.PlayerSlot });
         // modelBuilder.Entity<Contract>()
         //     .HasKey(c => c.ConId);
 
@@ -98,6 +104,4 @@ public class AghanimsWagerContext : DbContext
 
         }
     }
-
-    public DbSet<csharp_ef_webapi.Models.DiscordIds> DiscordIds { get; set; }
 }
