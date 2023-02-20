@@ -10,6 +10,20 @@ module.exports = {
       },
       allowedHosts: "all",
       port: 8080,
+      proxy: {
+        '/api': {
+          target: 'https://aghanimswager.com',
+          changeOrigin: true,
+          pathRewrite: {
+            '^/api': '/api'
+          },
+          onProxyReq(proxyReq, req, res) {
+            proxyReq.setHeader('Access-Control-Allow-Origin', '*');
+            proxyReq.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+            proxyReq.setHeader('Access-Control-Allow-Headers', 'X-Requested-With, content-type, Authorization');
+          }
+        }
+      },
       server: "localhost"
     },
     output: {
