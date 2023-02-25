@@ -2,47 +2,65 @@
   <div class="players">
     <b-container>
       <b-row class="mt-4">
-        <b-col cols="4">
+        <b-col style="display: flex; flex-wrap: wrap;">
           <b-card title="Mister Moneybags"
             img-src="https://carboncostume.com/wordpress/wp-content/uploads/2013/10/monopoly-650x350.jpg"
-            img-alt="Image" img-top tag="article" class="mb-2">
+            img-alt="Image" img-top tag="article" class="mb-2"
+            style="flex: 1 0 200px;">
             <b-card-text>
               <h2>{{ topSaltUser }}</h2><br />
               Most salt, who did you bribe?
             </b-card-text>
           </b-card>
-        </b-col>
-        <b-col cols="4">
           <b-card title="Grim Reaper's best friend"
             img-src="https://i.kym-cdn.com/entries/icons/original/000/011/121/SKULL_TRUMPET_0-1_screenshot.png"
-            img-alt="Image" img-top tag="article" class="mb-2">
+            img-alt="Image" img-top tag="article" class="mb-2"
+            style="flex: 1 0 200px;">
             <b-card-text>
               <h2>{{ topDeathsUser }}</h2><br />
               Sometimes the death timer cooldown is the only thing keeping that number from being higher.
             </b-card-text>
           </b-card>
-        </b-col>
-        <b-col cols="4">
           <b-card title="Biggest fuckin' nerd"
             img-src="https://media.istockphoto.com/photos/human-palm-touching-lawn-grass-low-angle-view-picture-id1349781282?k=20&m=1349781282&s=612x612&w=0&h=B7Uo9H1LAiG5_70747QgDDHculRCqPuZTQIC52gHJTA="
-            img-alt="Image" img-top tag="article" class="mb-2">
+            img-alt="Image" img-top tag="article" class="mb-2"
+            style="flex: 1 0 200px;">
             <b-card-text>
               <h2>{{ mostPlayedUser }}</h2><br />
               Stop playing so much dota go touch grass
             </b-card-text>
           </b-card>
         </b-col>
-        <b-col cols="6">
-          <b-card class="mt-4">
+      </b-row>
+      <b-row>
+        <b-col style="display: flex; flex-wrap: wrap;">
+          <div style="flex: 1 0 300px;">
             <h4>Leaderboard</h4>
-            <b-table striped hover :items="balancesLookup" :fields="leaderboardFields"></b-table>
-          </b-card>
-        </b-col>
-        <b-col cols="6">
-          <b-card class="mt-4">
+            <!-- <b-table striped hover :items="balancesLookup" :fields="leaderboardFields"></b-table> -->
+            <ol>
+              <li class="flex-row" style="background-color: gray;">
+                <span class="flex-child player-header">Discord Name</span>
+                <span class="flex-child player-header" style="text-align: right;">Salt</span>
+              </li>
+              <li class="flex-row" v-for="balance in balancesLookup" :key="balance.discordId">
+                <span class="flex-child player-descriptors">{{ balance.discordName }}</span>
+                <span class="flex-child player-data">{{ balance.tokens }}</span>
+              </li>
+            </ol>
+          </div>
+          <div style="flex: 1 0 300px;">
             <h4>Feederboard</h4>
-            <b-table striped hover :items="deathsLookup" :fields="feederboardFields"></b-table>
-          </b-card>
+            <ol>
+              <li class="flex-row" style="background-color: gray;">
+                <span class="flex-child player-header">Discord Name</span>
+                <span class="flex-child player-header" style="text-align: right;">Deaths</span>
+              </li>
+              <li class="flex-row" v-for="death in deathsLookup" :key="death.rank" :header="feederboardFields">
+                <span class="flex-child player-descriptors">{{ death.discordName }}</span>
+                <span class="flex-child player-data">{{ death.deaths }}</span>
+              </li>
+            </ol>
+          </div>
         </b-col>
       </b-row>
     </b-container>
@@ -140,7 +158,7 @@ export default {
         }.bind(this))
         .then(function (data) {
           // remove the invalid discord IDs and order by tokens desc
-          this.balances = data.sort((a, b) => b.tokens > a.tokens).filter(item => item.discordId > 0);
+          this.balances = data.sort((a, b) => b.tokens - a.tokens).filter(item => item.discordId > 0);
         }.bind(this))
         .catch(error => {
           console.error(error);
@@ -157,7 +175,7 @@ export default {
         }.bind(this))
         .then(function (data) {
           // remove the invalid discord IDs and order by deaths desc
-          this.feederboard = data.sort((a, b) => b.deaths > a.deaths).filter(item => item.deaths > 0);
+          this.feederboard = data.sort((a, b) => b.deaths - a.deaths).filter(item => item.deaths > 0);
         }.bind(this))
         .catch(error => {
           console.error(error);
@@ -202,6 +220,47 @@ export default {
 
 <!-- Add "scoped" attribute to limit CSS to this component only -->
 <style scoped>
+.flex-row {
+  border:1px solid grey;
+  border-radius: 25px;
+  display: flex;
+  padding-left: 25px;
+  padding-right: 25px;
+}
+
+div >>> .player-header {
+  font-family: Arial, Helvetica, sans-serif;
+  font-style: normal;
+  font-weight: 500;
+  font-size: 24px;
+  text-align: left;
+  vertical-align: middle;
+  margin-top: 4px;
+  flex-grow: 4;
+  color: white;
+}
+
+div >>> .player-descriptors {
+  font-family: Arial, Helvetica, sans-serif;
+  font-style: normal;
+  font-weight: 400;
+  font-size: 18px;
+  text-align: left;
+  vertical-align: middle;
+  margin-top: 4px;
+  flex-grow: 4;
+}
+
+div >>> .player-data {
+  font-family: monospace;
+  font-style: normal;
+  font-weight: 500;
+  font-size: 24px;
+  text-align: right;
+  vertical-align: middle;
+  flex-grow: 1;
+}
+
 h3 {
   margin: 40px 0 0;
 }
@@ -211,9 +270,17 @@ ul {
   padding: 0;
 }
 
+ol li:nth-child(odd) {
+  background-color: whitesmoke;
+}
+
+ol li:nth-child(even) {
+  background-color: white;
+}
+
 li {
   display: inline-block;
-  margin: 0 10px;
+  margin: 0 10px 10px 10px;
 }
 
 a {
