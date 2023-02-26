@@ -4,7 +4,7 @@
       <b-row class="mt-4">
         <b-col style="display: flex; flex-wrap: wrap;">
           <b-card title="Best Bromance" img-top img-src="/assets/bestBromance.jpg" img-height="300px" tag="article"
-            class="mb-2" style="flex: 1 0 200px;">
+            class="mb-2" style="flex: 1 0 300px;">
             <b-card-text>
               <h2>{{ bestBromance.bro1Name }}, {{ bestBromance.bro2Name }}</h2>
               <h2>Win Rate: {{ (bestBromance.winRate * 100).toFixed(2) }}%</h2><br />
@@ -12,7 +12,7 @@
             </b-card-text>
           </b-card>
           <b-card title="Worst Bromance" img-top img-src="/assets/worstBromance.png" img-height="300px" tag="article"
-            class="mb-2" style="flex: 1 0 200px;">
+            class="mb-2" style="flex: 1 0 300px;">
             <b-card-text>
               <h2>{{ worstBromance.bro1Name }}, {{ worstBromance.bro2Name }}</h2>
               <h2>Win Rate: {{ (worstBromance.winRate * 100).toFixed(2) }}%</h2><br />
@@ -28,15 +28,13 @@
             <ol>
               <li class="flex-row" style="background-color: gray;">
                 <span class="flex-child matches-header">Bros Discord Names</span>
-                <span class="flex-child matches-header" style="text-align: right;">Won Matches</span>
-                <span class="flex-child matches-header" style="text-align: right;">Total Matches</span>
+                <span class="flex-child matches-header" style="text-align: center;">Won / Total Matches</span>
                 <span class="flex-child matches-header" style="text-align: right;">Win Rate</span>
               </li>
               <li class="flex-row" v-for="bromance, index in bromances" :key="index">
                 <span class="flex-child matches-descriptors">{{ bromance.bro1Name }}, {{ bromance.bro2Name }}</span>
-                <span class="flex-child matches-data">{{ bromance.totalWins }}</span>
-                <span class="flex-child matches-data">{{ bromance.totalMatches }}</span>
-                <span class="flex-child matches-data">{{ (bromance.winRate * 100).toFixed(2) }}%</span>
+                <span class="flex-child matches-data">{{ bromance.totalWins }} / {{ bromance.totalMatches }}</span>
+                <span class="flex-child matches-data" style="text-align: right;">{{ (bromance.winRate * 100).toFixed(2) }}%</span>
               </li>
             </ol>
           </div>
@@ -130,15 +128,15 @@ div ::v-deep(.matches-descriptors) {
   text-align: left;
   vertical-align: middle;
   margin-top: 4px;
-  flex: 1;
+  flex: 1.3;
 }
 
 div ::v-deep(.matches-data) {
   font-family: monospace;
   font-style: normal;
   font-weight: 500;
-  font-size: 24px;
-  text-align: right;
+  font-size: 18px;
+  text-align: center;
   vertical-align: middle;
   flex: 1;
 }
@@ -147,7 +145,7 @@ h3 {
   margin: 40px 0 0;
 }
 
-ul {
+ol {
   list-style-type: none;
   padding: 0;
 }
@@ -162,7 +160,7 @@ ol li:nth-child(even) {
 
 li {
   display: inline-block;
-  margin: 0 10px 10px 10px;
+  margin: 0 0px 10px 10px;
 }
 
 a {
