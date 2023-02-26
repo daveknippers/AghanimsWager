@@ -24,6 +24,7 @@ public class AghanimsWagerContext : DbContext
     public DbSet<DiscordIds> DiscordIds { get; set; }
     public DbSet<PlayerMatchDetails> PlayerMatchDetails { get; set; }
     public DbSet<MatchStatus> MatchStatus { get; set; }
+    public DbSet<Bromance> Bromance { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -32,49 +33,9 @@ public class AghanimsWagerContext : DbContext
 
         modelBuilder.Entity<PlayerMatchDetails>()
             .HasKey(pmd => new { pmd.MatchId, pmd.PlayerSlot });
-        // modelBuilder.Entity<Contract>()
-        //     .HasKey(c => c.ConId);
 
-        // modelBuilder.Entity<IBApi.Contract>()
-        //     .Ignore(c => c.ComboLegs)
-        //     .Ignore(c => c.DeltaNeutralContract)
-        //     .HasKey(c => c.ConId);
-
-        // modelBuilder.Entity<PaperTraderApp.Models.ContractSecType>()
-        //     .HasOne(cst => cst.Contract)
-        //     .WithMany()
-        //     .HasPrincipalKey(c => c.ConId)
-        //     .OnDelete(DeleteBehavior.Cascade);
-
-        // modelBuilder.Entity<PaperTraderApp.Models.OptionChain>()
-        //     .HasOne(cst => cst.Contract)
-        //     .WithMany()
-        //     .HasPrincipalKey(c => c.ConId)
-        //     .OnDelete(DeleteBehavior.Cascade);
-
-        // modelBuilder.Entity<PaperTraderApp.Models.OptionStrike>()
-        //     .HasOne(cst => cst.Contract)
-        //     .WithMany()
-        //     .HasPrincipalKey(c => c.ConId)
-        //     .OnDelete(DeleteBehavior.Cascade);
-
-        // modelBuilder.Entity<TwsMarketDataHistory>()
-        //     .HasOne(mdh => mdh.Contract)
-        //     .WithMany()
-        //     .HasPrincipalKey(c => c.ConId)
-        //     .OnDelete(DeleteBehavior.Cascade);
-
-        // modelBuilder.Entity<TwsMarketDataRequest>()
-        //     .HasOne(mdr => mdr.TwsMarketDataHistory)
-        //     .WithMany()
-        //     .HasPrincipalKey(mdh => mdh.TwsMarketDataHistoryId)
-        //     .OnDelete(DeleteBehavior.Cascade);
-
-        // modelBuilder.Entity<TwsMarketDataHistoryData>()
-        //     .HasOne(mdhd => mdhd.TwsApiRequest)
-        //     .WithMany()
-        //     .HasPrincipalKey(mdr => mdr.TwsApiRequestId)
-        //     .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<Bromance>()
+            .HasKey(b => new { b.bro1Name, b.bro2Name });
     }
 
     public class StringArrayValueConverter : ValueConverter<string[], string>
