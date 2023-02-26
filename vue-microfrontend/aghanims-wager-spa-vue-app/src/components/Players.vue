@@ -228,7 +228,7 @@ export default {
   padding-right: 25px;
 }
 
-div >>> .player-header {
+div ::v-deep(.player-header) {
   font-family: Arial, Helvetica, sans-serif;
   font-style: normal;
   font-weight: 500;
@@ -240,7 +240,7 @@ div >>> .player-header {
   color: white;
 }
 
-div >>> .player-descriptors {
+div ::v-deep(.player-descriptors) {
   font-family: Arial, Helvetica, sans-serif;
   font-style: normal;
   font-weight: 400;
@@ -251,7 +251,7 @@ div >>> .player-descriptors {
   flex-grow: 4;
 }
 
-div >>> .player-data {
+div ::v-deep(.player-data) {
   font-family: monospace;
   font-style: normal;
   font-weight: 500;

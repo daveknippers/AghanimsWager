@@ -19,6 +19,7 @@ RUN npm run build
 FROM nginx:stable-alpine as production-stage
 ARG nginx_config=prod-nginx.conf
 COPY --from=build-rootconfig /app/dist /usr/share/nginx/html
+COPY --from=build-vueapp /vue-app/dist/assets /usr/share/nginx/html/assets
 COPY --from=build-vueapp /vue-app/dist/js /usr/share/nginx/html/js
 COPY --from=build-vueapp /vue-app/dist/favicon.ico /usr/share/nginx/html
 COPY $nginx_config /etc/nginx/conf.d/default.conf

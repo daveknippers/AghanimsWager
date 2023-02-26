@@ -4,7 +4,6 @@ const CopyWebpackPlugin = require('copy-webpack-plugin');
 module.exports = {
   configureWebpack: {
     devServer: {
-      https: true,
       headers: {
         "Access-Control-Allow-Origin": "*"
       },
@@ -12,7 +11,7 @@ module.exports = {
       port: 8080,
       proxy: {
         '/api': {
-          target: 'https://aghanimswager.com',
+          target: 'https://localhost:5001',
           changeOrigin: true,
           pathRewrite: {
             '^/api': '/api'
@@ -33,7 +32,7 @@ module.exports = {
     plugins: [
       new CopyWebpackPlugin({
         patterns: [
-          { from: 'src/assets/*', to: 'assets/[name][ext]'},
+          { from: 'public/assets/*', to: 'assets/[name][ext]'},
         ]
       })
     ]
