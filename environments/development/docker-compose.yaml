@@ -9,7 +9,7 @@ services:
     volumes:
      - ../../postgres-db/data:/var/lib/postgresql/data
       # The init script will be executed when the database is first run
-     - ../../postgres-db/dotabet_2023-02-07.sql:/docker-entrypoint-initdb.d/init.sql
+     - ../../postgres-db/dotabet_schema.sql:/docker-entrypoint-initdb.d/init.sql
   webapi:
     build:
       context: ../../csharp-ef-webapi
