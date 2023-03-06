@@ -7,16 +7,18 @@
             class="mb-2" style="flex: 1 0 300px;">
             <b-card-text>
               <h2>{{ bestBromance.bro1Name }}, {{ bestBromance.bro2Name }}</h2>
-              <h2>Win Rate: {{ (bestBromance.winRate * 100).toFixed(2) }}%</h2><br />
-              We finish each other's sandwiches
+              <h2>Win Rate: {{ (bestBromance.winRate * 100).toFixed(2) }}%</h2>
+              <p style="margin-bottom: 0px">We finish each other's sandwiches</p>
+              <p style="font-size: smaller">(min. 3 games)</p>
             </b-card-text>
           </b-card>
           <b-card title="Worst Bromance" img-top img-src="/assets/worstBromance.png" img-height="300px" tag="article"
             class="mb-2" style="flex: 1 0 300px;">
             <b-card-text>
               <h2>{{ worstBromance.bro1Name }}, {{ worstBromance.bro2Name }}</h2>
-              <h2>Win Rate: {{ (worstBromance.winRate * 100).toFixed(2) }}%</h2><br />
-              It may be time for some trust falls
+              <h2>Win Rate: {{ (worstBromance.winRate * 100).toFixed(2) }}%</h2>
+              <p style="margin-bottom: 0px">It may be time for some trust falls</p>
+              <p style="font-size: smaller">(min. 3 games)</p>
             </b-card-text>
           </b-card>
         </b-col>
@@ -26,15 +28,15 @@
           <div style="flex: 1 0 300px;">
             <h4>Bromances</h4>
             <ol>
-              <li class="flex-row" style="background-color: gray;">
-                <span class="flex-child matches-header">Bros Discord Names</span>
-                <span class="flex-child matches-header" style="text-align: center;">Won / Total Matches</span>
-                <span class="flex-child matches-header" style="text-align: right;">Win Rate</span>
+              <li class="flex-row" style="background-color: rgb(102, 131, 137);">
+                <span class="flex-child matches-header" style="flex: 2 1 300px;">Bros Discord Names</span>
+                <span class="flex-child matches-header" style="flex: 1 1; text-align: center;">Won / Total Matches</span>
+                <span class="flex-child matches-header" style="flex: 0.5 1; text-align: right; padding-right: 10px">Win Rate</span>
               </li>
               <li class="flex-row" v-for="bromance, index in bromances" :key="index">
                 <span class="flex-child matches-descriptors">{{ bromance.bro1Name }}, {{ bromance.bro2Name }}</span>
                 <span class="flex-child matches-data">{{ bromance.totalWins }} / {{ bromance.totalMatches }}</span>
-                <span class="flex-child matches-data" style="text-align: right;">{{ (bromance.winRate * 100).toFixed(2) }}%</span>
+                <span class="flex-child matches-data" style="text-align: right; flex: 0.3 1 100px">{{ (bromance.winRate * 100).toFixed(2) }}%</span>
               </li>
             </ol>
           </div>
@@ -60,7 +62,7 @@ export default {
       let reduced = {};
       if (this.bromances.length > 0) {
         reduced = this.bromances.reduce(function (a, b) {
-          return (a.winRate > b.winRate || (a.winRate == b.winRate && a.totalWins > b.totalWins)) ? a : b;
+          return ((a.totalMatches >= 3 && a.winRate > b.winRate) || (a.totalMatches >= 3 && a.winRate == b.winRate && a.totalWins > b.totalWins)) ? a : b;
         });
       }
       return reduced;
@@ -69,7 +71,7 @@ export default {
       let reduced = {};
       if (this.bromances.length > 0) {
         reduced = this.bromances.reduce(function (a, b) {
-          return (a.winRate < b.winRate || (a.winRate == b.winRate && a.totalMatches > b.totalMatches)) ? a : b;
+          return ((a.totalMatches >= 3 && a.winRate < b.winRate) || (a.totalMatches >= 3 && a.winRate == b.winRate && a.totalMatches > b.totalMatches)) ? a : b;
         });
       }
       return reduced;
@@ -100,9 +102,10 @@ export default {
 <!-- Add "scoped" attribute to limit CSS to this component only -->
 <style scoped>
 .flex-row {
-  border: 1px solid grey;
-  border-radius: 25px;
+  border: 1px solid rgb(220, 220, 220);
+  border-radius: 50px;
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-evenly;
   padding-left: 25px;
   padding-right: 25px;
@@ -111,12 +114,11 @@ export default {
 div ::v-deep(.matches-header) {
   font-family: Arial, Helvetica, sans-serif;
   font-style: normal;
-  font-weight: 500;
-  font-size: 24px;
+  font-weight: 400;
+  font-size: 22px;
   text-align: left;
   vertical-align: middle;
   margin-top: 4px;
-  flex-grow: 4;
   color: white;
 }
 
@@ -128,17 +130,17 @@ div ::v-deep(.matches-descriptors) {
   text-align: left;
   vertical-align: middle;
   margin-top: 4px;
-  flex: 1.3;
+  flex: 1 0 300px;
 }
 
 div ::v-deep(.matches-data) {
   font-family: monospace;
   font-style: normal;
   font-weight: 500;
-  font-size: 18px;
+  font-size: 24px;
   text-align: center;
   vertical-align: middle;
-  flex: 1;
+  flex: 0.5 1 100px;
 }
 
 h3 {
@@ -160,7 +162,7 @@ ol li:nth-child(even) {
 
 li {
   display: inline-block;
-  margin: 0 0px 10px 10px;
+  margin: 0 0px 5px 0px;
 }
 
 a {
