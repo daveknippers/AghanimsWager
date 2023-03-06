@@ -614,6 +614,11 @@
 "name":"npc_dota_hero_primal_beast",
 "id":137,
 "localized_name":"Primal Beast"
+},
+{
+"name":"npc_dota_hero_muerta",
+"id":138,
+"localized_name":"Muerta"
 }
 ]
 }

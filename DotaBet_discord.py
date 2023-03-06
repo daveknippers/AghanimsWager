@@ -518,7 +518,7 @@ async def add_steam_id(ctx,*arg):
 		await ctx.send('Invalid syntax, steam_id is a 17 digit number')
 	else:
 		account_id = convert_steam_to_account(steam_id)
-		if (result := pgdb.insert_discord_id(discord_id,steam_id,account_id)):
+		if (result := pgdb.insert_discord_id(discord_id,steam_id,account_id,ctx.message.author.name)):
 			await ctx.send('Added steam_id {} for {}'.format(steam_id,ctx.message.author.mention))
 
 @bot.command()

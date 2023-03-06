@@ -104,7 +104,8 @@ class PGDB:
 		self.discord_ids = db.Table('discord_ids', self.metadata,
 			db.Column('discord_id',db.BigInteger,nullable=False),
 			db.Column('steam_id',db.BigInteger,nullable=False),
-			db.Column('account_id',db.BigInteger,nullable=False))
+			db.Column('account_id',db.BigInteger,nullable=False),
+			db.Column('discord_name',db.VARCHAR,nullable=False))
 
 		self.live_players = db.Table('live_players', self.metadata,
 			db.Column('match_id',db.BigInteger,nullable=False),
@@ -257,19 +258,19 @@ class PGDB:
 
 	def select_discord_ids(self):
 		di = self.discord_ids
-		q = db.select([di])
+		q = db.select([di.c.discord_id,di.c.steam_id,di.c.account_id])
 		result = self.conn.execute(q).fetchall()
 		return result
 		
-	def insert_discord_id(self,discord_id,steam_id,account_id):
+	def insert_discord_id(self,discord_id,steam_id,account_id,username):
 		di = self.discord_ids
 		q = db.select([di.c.discord_id]).where(di.c.discord_id == discord_id)
 		result = self.conn.execute(q).fetchall()
 		if len(result) == 0:
-			insert = di.insert().values(discord_id=discord_id,steam_id=steam_id,account_id=account_id)
+			insert = di.insert().values(discord_id=discord_id,steam_id=steam_id,account_id=account_id,discord_name=username)
 			return self.conn.execute(insert)
 		elif len(result) == 1:
-			update = di.update().values(steam_id = steam_id,account_id=account_id).where(di.c.discord_id == discord_id)
+			update = di.update().values(steam_id = steam_id,account_id=account_id,discord_name=username).where(di.c.discord_id == discord_id)
 			return self.conn.execute(update)
 		elif len(result) > 1:
 			print('Insert discord_id/steam_id/account_id failed for {} / {} / {}, multiple results returned'.format(discord_id,steam_id,account_id))
