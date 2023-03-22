@@ -35,7 +35,7 @@
             <li class="flex-row" style="background-color: #474b53;">
               <span class="flex-child matches-header" style="flex: 0.5 1 350px; padding-left: 20px">Bros Discord Names</span>
               <span class="flex-child matches-header" style="flex: 1 1; text-align: center;">Won / Total Matches</span>
-              <span class="flex-child matches-header" style="flex: 0.5 1; text-align: right; padding-right: 10px">Win
+              <span class="flex-child matches-header" style="flex: 0.5 1; text-align: right; padding-right: 18px">Win
                 Rate</span>
             </li>
             <ol>
@@ -159,9 +159,8 @@ div ::v-deep(.matches-descriptors) {
 }
 
 div ::v-deep(.matches-data) {
-  font-family: monospace;
+  font-family: system-ui;
   font-style: normal;
-  font-weight: 500;
   font-size: 18px;
   text-align: center;
   vertical-align: middle;
@@ -202,7 +201,7 @@ div ::v-deep(.matches-data) {
   font-size: 20px;
   font-family: Arial, Helvetica, sans-serif;
   counter-increment: leaderboard;
-  padding: 18px 10px 18px 50px;
+  padding: 18px 18px 18px 50px;
   backface-visibility: hidden;
   transform: translateZ(0) scale(1, 1);
 }
@@ -257,10 +256,9 @@ div ::v-deep(.matches-data) {
   z-index: 2;
   height: 100%;
   text-align: right;
-  font-family: monospace;
+  font-family: system-ui;
   font-style: normal;
-  font-weight: 500;
-  font-size: 16px;
+  font-size: 18px;
   flex: 0.5 1 100px;
   color: #fff;
 }
