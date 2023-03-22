@@ -32,7 +32,6 @@
       </b-collapse>
     </b-navbar>
     <router-view />
-    <img alt="Vue logo" src="/assets/logo.png"/>
   </div>
 </template>
 
@@ -54,5 +53,16 @@ export default {
 
 .nav-container {
   margin-left: 10px;
+}
+
+/*-------------------- Body --------------------*/
+*, *::before, *::after {
+   box-sizing: border-box;
+}
+
+body {
+   margin: 0;
+   background: radial-gradient(ellipse farthest-corner at center top, #6492f3 0%, #416de7 100%);
+   color: #fff;
 }
 </style>
