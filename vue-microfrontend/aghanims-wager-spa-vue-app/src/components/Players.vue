@@ -69,6 +69,39 @@
               </li>
             </ol>
           </div>
+
+          <div style="flex: 1 0 300px;" class="leaderboard">
+            <h1>
+              Dota Win Streaks
+            </h1>
+            <li class="flex-row" style="background-color: #474b53;">
+              <span class="flex-child player-header" style="flex: 1 1; padding-left: 40px">Discord Name</span>
+              <span class="flex-child player-header"
+                style="flex: 0.5 1; text-align:center; padding-right: 12px">Streak</span>
+            </li>
+            <ol>
+              <li class="flex-row" v-for="streaks in matchStreaks" :key="streaks.discordName">
+                <span class="flex-child player-descriptors">{{ streaks.discordName }}</span>
+                <span class="flex-child player-data">{{ streaks.match_streak }}</span>
+              </li>
+            </ol>
+          </div>
+          <div style="flex: 1 0 300px;" class="leaderboard">
+            <h1>
+              Salt Bet Streaks
+            </h1>
+            <li class="flex-row" style="background-color: #474b53;">
+              <span class="flex-child player-header" style="flex: 1 1; padding-left: 40px">Discord Name</span>
+              <span class="flex-child player-header"
+                style="flex: 0.5 1; text-align:center; padding-right: 12px">Streak</span>
+            </li>
+            <ol>
+              <li class="flex-row" v-for="streaks in betStreaks" :key="streaks.discordName">
+                <span class="flex-child player-descriptors">{{ streaks.discordName }}</span>
+                <span class="flex-child player-data">{{ streaks.bet_streak }}</span>
+              </li>
+            </ol>
+          </div>
         </b-col>
       </b-row>
     </b-container>
@@ -105,6 +138,8 @@ export default {
       maxValue: '',
       mostPlayedUser: '',
       balances: [],
+      betStreaks: [],
+      matchStreaks: [],
       feederboard: [],
       discordIds: [],
       feederboardFields: [
@@ -143,6 +178,8 @@ export default {
     this.getBalanceLedger();
     this.getFeederboard();
     this.getMostPlayedUser();
+    this.getBetStreaks();
+    this.getMatchStreaks();
   },
   computed: {
     balancesLookup() {
@@ -206,6 +243,40 @@ export default {
         .then(function (data) {
           // remove the invalid discord IDs and order by deaths desc
           this.feederboard = data.sort((a, b) => b.deaths - a.deaths).filter(item => item.deaths > 0);
+        }.bind(this))
+        .catch(error => {
+          console.error(error);
+        });
+    },
+    getMatchStreaks() {
+      fetch('/api/DiscordCommands/MatchStreaks')
+        .then(function (response) {
+          if (response.status != 200) {
+            throw response.status;
+          } else {
+            return response.json();
+          }
+        }.bind(this))
+        .then(function (data) {
+          // order by streak desc
+          this.matchStreaks = data.sort((a, b) => b.match_streak - a.match_streak);
+        }.bind(this))
+        .catch(error => {
+          console.error(error);
+        });
+    },
+    getBetStreaks() {
+      fetch('/api/DiscordCommands/BetStreaks')
+        .then(function (response) {
+          if (response.status != 200) {
+            throw response.status;
+          } else {
+            return response.json();
+          }
+        }.bind(this))
+        .then(function (data) {
+          // order by streak desc
+          this.betStreaks = data.sort((a, b) => b.bet_streak - a.bet_streak);
         }.bind(this))
         .catch(error => {
           console.error(error);

@@ -25,6 +25,8 @@ public class AghanimsWagerContext : DbContext
     public DbSet<PlayerMatchDetails> PlayerMatchDetails { get; set; }
     public DbSet<MatchStatus> MatchStatus { get; set; }
     public DbSet<Bromance> Bromance { get; set; }
+    public DbSet<BetStreak> BetStreaks { get; set; }
+    public DbSet<MatchStreak> MatchStreaks { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

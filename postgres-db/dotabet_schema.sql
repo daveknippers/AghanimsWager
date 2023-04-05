@@ -738,3 +738,177 @@ ALTER TABLE ONLY "Kali".rp_heroes
 
 ALTER TABLE "Kali".discord_ids 
     ADD COLUMN discord_name VARCHAR;
+
+
+-- View: Kali.bromance_last_60
+
+-- DROP VIEW "Kali".bromance_last_60;
+
+CREATE OR REPLACE VIEW "Kali".bromance_last_60
+ AS
+ WITH bromance AS (
+         SELECT di1.account_id AS bro_1_id,
+            di1.discord_name AS bro_1_name,
+            di2.account_id AS bro_2_id,
+            di2.discord_name AS bro_2_name
+           FROM "Kali".discord_ids di1
+             CROSS JOIN "Kali".discord_ids di2
+          WHERE di1.account_id < di2.account_id
+        ), relevant_match_details AS (
+         SELECT pmd.match_id,
+            pmd.account_id,
+                CASE
+                    WHEN pmd.player_slot >= 0 AND pmd.player_slot <= 4 THEN 'radiant'::text
+                    WHEN pmd.player_slot >= 128 AND pmd.player_slot <= 132 THEN 'dire'::text
+                    ELSE 'unknown'::text
+                END AS player_team,
+                CASE
+                    WHEN pmd.player_slot >= 0 AND pmd.player_slot <= 4 AND md.radiant_win = true THEN true
+                    WHEN pmd.player_slot >= 0 AND pmd.player_slot <= 4 AND md.radiant_win = false THEN false
+                    WHEN pmd.player_slot >= 128 AND pmd.player_slot <= 132 AND md.radiant_win = true THEN false
+                    WHEN pmd.player_slot >= 128 AND pmd.player_slot <= 132 AND md.radiant_win = false THEN true
+                    ELSE NULL::boolean
+                END AS player_won,
+            to_timestamp(md.start_time::double precision) AS match_start_time
+           FROM "Kali".player_match_details pmd
+             JOIN "Kali".match_details md ON pmd.match_id = md.match_id
+          WHERE to_timestamp(md.start_time::double precision) >= (CURRENT_DATE - '60 days'::interval)
+        )
+ SELECT bromance.bro_1_name,
+    bromance.bro_2_name,
+    sum(
+        CASE
+            WHEN rmd1.player_won = true THEN 1
+            WHEN rmd1.player_won = false THEN 0
+            ELSE 0
+        END) AS total_wins,
+    count(DISTINCT rmd1.match_id) AS total_matches
+   FROM bromance
+     LEFT JOIN relevant_match_details rmd1 ON bromance.bro_1_id = rmd1.account_id
+     LEFT JOIN relevant_match_details rmd2 ON bromance.bro_2_id = rmd2.account_id
+  WHERE rmd1.match_id = rmd2.match_id AND rmd1.player_team = rmd2.player_team
+  GROUP BY bromance.bro_1_name, bromance.bro_2_name
+  ORDER BY (sum(
+        CASE
+            WHEN rmd1.player_won = true THEN 1
+            WHEN rmd1.player_won = false THEN 0
+            ELSE 0
+        END)) DESC, (count(DISTINCT rmd1.match_id)) DESC;
+
+ALTER TABLE "Kali".bromance_last_60
+    OWNER TO machine_user;
+
+-- View: Kali.matches_streaks
+
+-- DROP VIEW "Kali".matches_streaks;
+
+CREATE OR REPLACE VIEW "Kali".matches_streaks
+ AS
+ WITH relevant_match_details AS (
+         SELECT pmd.match_id,
+            di.discord_name,
+                CASE
+                    WHEN pmd.player_slot >= 0 AND pmd.player_slot <= 4 THEN 'radiant'::text
+                    WHEN pmd.player_slot >= 128 AND pmd.player_slot <= 132 THEN 'dire'::text
+                    ELSE 'unknown'::text
+                END AS player_team,
+                CASE
+                    WHEN pmd.player_slot >= 0 AND pmd.player_slot <= 4 AND md.radiant_win = true THEN true
+                    WHEN pmd.player_slot >= 0 AND pmd.player_slot <= 4 AND md.radiant_win = false THEN false
+                    WHEN pmd.player_slot >= 128 AND pmd.player_slot <= 132 AND md.radiant_win = true THEN false
+                    WHEN pmd.player_slot >= 128 AND pmd.player_slot <= 132 AND md.radiant_win = false THEN true
+                    ELSE NULL::boolean
+                END AS player_won,
+            to_timestamp(md.start_time::double precision) AS match_start_time
+           FROM "Kali".player_match_details pmd
+             JOIN "Kali".match_details md ON pmd.match_id = md.match_id
+             JOIN "Kali".discord_ids di ON pmd.account_id = di.account_id
+          WHERE to_timestamp(md.start_time::double precision) >= (CURRENT_DATE - '60 days'::interval)
+        )
+ SELECT t.discord_name,
+        CASE
+            WHEN t.player_won = true THEN count(*)
+            WHEN t.player_won = false THEN count(*) * '-1'::integer
+            ELSE NULL::bigint
+        END AS streak
+   FROM ( SELECT rmd.discord_name,
+            row_number() OVER (PARTITION BY rmd.discord_name ORDER BY rmd.match_start_time DESC) AS row_num,
+            rmd.player_won,
+            row_number() OVER (PARTITION BY rmd.discord_name, rmd.player_won ORDER BY rmd.match_start_time DESC) AS group_num,
+            first_value(rmd.player_won) OVER (PARTITION BY rmd.discord_name ORDER BY rmd.match_start_time DESC) AS latest_result
+           FROM relevant_match_details rmd
+          ORDER BY rmd.match_start_time DESC) t
+  WHERE t.player_won = t.latest_result AND t.row_num = t.group_num
+  GROUP BY t.discord_name, t.player_won
+  ORDER BY (
+        CASE
+            WHEN t.player_won = true THEN count(*)
+            WHEN t.player_won = false THEN count(*) * '-1'::integer
+            ELSE NULL::bigint
+        END) DESC;
+
+ALTER TABLE "Kali".matches_streaks
+    OWNER TO machine_user;
+
+
+
+-- View: Kali.bets_streaks
+
+-- DROP VIEW "Kali".bets_streaks;
+
+CREATE OR REPLACE VIEW "Kali".bets_streaks
+ AS
+ WITH relevant_bet_details AS (
+         SELECT bl.wager_id,
+            bl.match_id,
+            di.discord_name,
+                CASE
+                    WHEN bl.side = 2 THEN 'radiant'::text
+                    WHEN bl.side = 3 THEN 'dire'::text
+                    ELSE 'unknown'::text
+                END AS bet_team,
+                CASE
+                    WHEN bl.side = 2 AND md.radiant_win = true THEN true
+                    WHEN bl.side = 2 AND md.radiant_win = false THEN false
+                    WHEN bl.side = 3 AND md.radiant_win = true THEN false
+                    WHEN bl.side = 3 AND md.radiant_win = false THEN true
+                    ELSE NULL::boolean
+                END AS bet_won,
+            to_timestamp(md.start_time::double precision) AS match_start_time,
+            bl.amount,
+                CASE
+                    WHEN auto_bets.match_id IS NOT NULL AND bl.wager_id = min(bl.wager_id) OVER (PARTITION BY auto_bets.match_id, auto_bets.account_id) THEN true
+                    ELSE false
+                END AS auto_bet
+           FROM "Kali".match_details md
+             JOIN "Kali".bet_ledger bl ON md.match_id = bl.match_id
+             JOIN "Kali".discord_ids di ON bl.gambler_id = di.discord_id
+             LEFT JOIN "Kali".player_match_details auto_bets ON md.match_id = auto_bets.match_id AND di.account_id = auto_bets.account_id AND bl.amount = 250
+          WHERE to_timestamp(md.start_time::double precision) >= (CURRENT_DATE - '60 days'::interval)
+        )
+ SELECT t.discord_name,
+        CASE
+            WHEN t.bet_won = true THEN count(*)
+            WHEN t.bet_won = false THEN count(*) * '-1'::integer
+            ELSE NULL::bigint
+        END AS streak
+   FROM ( SELECT rbd.discord_name,
+            row_number() OVER (PARTITION BY rbd.discord_name ORDER BY rbd.match_start_time DESC) AS row_num,
+            rbd.bet_won,
+            row_number() OVER (PARTITION BY rbd.discord_name, rbd.bet_won ORDER BY rbd.match_start_time DESC) AS group_num,
+            first_value(rbd.bet_won) OVER (PARTITION BY rbd.discord_name ORDER BY rbd.match_start_time DESC) AS latest_result
+           FROM relevant_bet_details rbd
+          WHERE rbd.auto_bet = false
+          ORDER BY rbd.match_start_time DESC) t
+  WHERE t.bet_won = t.latest_result AND t.row_num = t.group_num
+  GROUP BY t.discord_name, t.bet_won
+  ORDER BY (
+        CASE
+            WHEN t.bet_won = true THEN count(*)
+            WHEN t.bet_won = false THEN count(*) * '-1'::integer
+            ELSE NULL::bigint
+        END) DESC;
+
+ALTER TABLE "Kali".bets_streaks
+    OWNER TO machine_user;
+

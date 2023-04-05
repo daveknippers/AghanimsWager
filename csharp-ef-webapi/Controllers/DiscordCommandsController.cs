@@ -95,5 +95,21 @@ namespace csharp_ef_webapi.Controllers
             var bromances = await _context.Bromance.ToListAsync();
             return bromances;
         }
+
+        // GET: api/BetStreaks
+        [HttpGet("BetStreaks")]
+        public async Task<ActionResult<IEnumerable<BetStreak>>> GetBetStreaks()
+        {
+            var betStreaks = await _context.BetStreaks.ToListAsync();
+            return betStreaks;
+        }
+
+        // GET: api/MatchStreaks
+        [HttpGet("MatchStreaks")]
+        public async Task<ActionResult<IEnumerable<MatchStreak>>> GetMatchStreaks()
+        {
+            var matchStreaks = await _context.MatchStreaks.ToListAsync();
+            return matchStreaks;
+        }
     }
 }
