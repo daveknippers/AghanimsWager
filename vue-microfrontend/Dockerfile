@@ -25,6 +25,10 @@ COPY --from=build-vueapp /vue-app/dist/favicon.ico /usr/share/nginx/html
 COPY $nginx_config /etc/nginx/conf.d/default.conf
 COPY $nginx_config /etc/nginx/sites-available/aghanimswager.com
 COPY $nginx_config /etc/nginx/sites-enabled/aghanimswager.com
+
+# install certbot
+RUN apk add certbot certbot-nginx
+
 EXPOSE 80
 EXPOSE 443
 CMD ["nginx", "-g", "daemon off;"]
