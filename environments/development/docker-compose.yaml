@@ -25,10 +25,10 @@ services:
       - postgres
   spa:
     build:
-      context: ../../vue-microfrontend
+      context: ../../frontend
       args:
         nginx_config: dev-nginx.conf
-        build_type: build-test
+        build_type: build
     ports:
       - "80:80"
       - "443:443"
