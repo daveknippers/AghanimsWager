@@ -17,4 +17,4 @@ Create a model of what you need then
 ` dotnet aspnet-codegenerator controller -name BalanceLedgerController -async -api -m BalanceLedger -dc AghanimsWagerContext -outDir Controllers`
 
 ### Adding new migrations
-`dotnet ef database migrations add <MigrationName> --context AghanimsWagerContext --output-dir Migrations`
+`dotnet ef migrations add <MigrationName> --context AghanimsWagerContext --output-dir Migrations`

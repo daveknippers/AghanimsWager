@@ -88,95 +88,28 @@ namespace csharp_ef_webapi.Controllers
             return feederResponse;
         }
 
-        // // GET: api/BalanceLedger/5
-        // [HttpGet("{id}")]
-        // public async Task<ActionResult<BalanceLedger>> GetBalanceLedger(string id)
-        // {
-        //     var balanceLedger = await _context.BalanceLedger.FindAsync(id);
+        // GET: api/Bromance
+        [HttpGet("Bromance")]
+        public async Task<ActionResult<IEnumerable<Bromance>>> GetBromance()
+        {
+            var bromances = await _context.Bromance.ToListAsync();
+            return bromances;
+        }
 
-        //     if (balanceLedger == null)
-        //     {
-        //         return NotFound();
-        //     }
+        // GET: api/BetStreaks
+        [HttpGet("BetStreaks")]
+        public async Task<ActionResult<IEnumerable<BetStreak>>> GetBetStreaks()
+        {
+            var betStreaks = await _context.BetStreaks.ToListAsync();
+            return betStreaks;
+        }
 
-        //     return balanceLedger;
-        // }
-
-        // // PUT: api/BalanceLedger/5
-        // // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
-        // [HttpPut("{id}")]
-        // public async Task<IActionResult> PutBalanceLedger(long id, BalanceLedger balanceLedger)
-        // {
-        //     if (id != balanceLedger.DiscordId)
-        //     {
-        //         return BadRequest();
-        //     }
-
-        //     _context.Entry(balanceLedger).State = EntityState.Modified;
-
-        //     try
-        //     {
-        //         await _context.SaveChangesAsync();
-        //     }
-        //     catch (DbUpdateConcurrencyException)
-        //     {
-        //         if (!BalanceLedgerExists(id))
-        //         {
-        //             return NotFound();
-        //         }
-        //         else
-        //         {
-        //             throw;
-        //         }
-        //     }
-
-        //     return NoContent();
-        // }
-
-        // // POST: api/BalanceLedger
-        // // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
-        // [HttpPost]
-        // public async Task<ActionResult<BalanceLedger>> PostBalanceLedger(BalanceLedger balanceLedger)
-        // {
-        //     _context.BalanceLedger.Add(balanceLedger);
-        //     try
-        //     {
-        //         await _context.SaveChangesAsync();
-        //     }
-        //     catch (DbUpdateException)
-        //     {
-        //         if (BalanceLedgerExists(balanceLedger.DiscordId))
-        //         {
-        //             return Conflict();
-        //         }
-        //         else
-        //         {
-        //             throw;
-        //         }
-        //     }
-
-        //     return CreatedAtAction("GetBalanceLedger", new { id = balanceLedger.DiscordId }, balanceLedger);
-        // }
-
-        // // DELETE: api/BalanceLedger/5
-        // [HttpDelete("{id}")]
-        // public async Task<IActionResult> DeleteBalanceLedger(long id)
-        // {
-        //     var balanceLedger = await _context.BalanceLedger.FindAsync(id);
-        //     if (balanceLedger == null)
-        //     {
-        //         return NotFound();
-        //     }
-
-        //     _context.BalanceLedger.Remove(balanceLedger);
-        //     await _context.SaveChangesAsync();
-
-        //     return NoContent();
-        // }
-
-        // private bool BalanceLedgerExists(long id)
-        // {
-        //     return _context.BalanceLedger.Any(e => e.DiscordId == id);
-        // }
+        // GET: api/MatchStreaks
+        [HttpGet("MatchStreaks")]
+        public async Task<ActionResult<IEnumerable<MatchStreak>>> GetMatchStreaks()
+        {
+            var matchStreaks = await _context.MatchStreaks.ToListAsync();
+            return matchStreaks;
+        }
     }
 }
