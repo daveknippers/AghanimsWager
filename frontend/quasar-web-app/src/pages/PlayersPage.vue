@@ -3,49 +3,19 @@
         <q-page-container class="flex-container justify-evenly">
             <div class="row justify-evenly" style="width: 100%">
                 <div class="col col-auto">
-                    <q-card class="card-container">
-                        <q-img src="https://carboncostume.com/wordpress/wp-content/uploads/2013/10/monopoly-650x350.jpg"
-                            style="height: 200px" />
-                        <q-card-section class="text-h6 q-mt-md">
-                            Mister Moneybags
-                        </q-card-section>
-                        <q-card-section class="text-h6 q-mt-md">
-                            {{ topSaltUser }}
-                        </q-card-section>
-                        <q-card-section class="q-pb-sm">
-                            Most salt, who did you bribe?
-                        </q-card-section>
-                    </q-card>
+                    <award-card-component :name="topSaltUser" award-title="Mister Moneybags"
+                        description="Most salt, who did you bribe?"
+                        image-src="https://carboncostume.com/wordpress/wp-content/uploads/2013/10/monopoly-650x350.jpg" />
                 </div>
                 <div class="col col-auto">
-                    <q-card class="card-container">
-                        <q-img src="https://i.kym-cdn.com/entries/icons/original/000/011/121/SKULL_TRUMPET_0-1_screenshot.png"
-                            style="height: 200px" />
-                        <q-card-section class="text-h6 q-mt-md">
-                            Grim Reaper's best friend
-                        </q-card-section>
-                        <q-card-section class="text-h6 q-mt-md">
-                            {{ topDeathsUser }}
-                        </q-card-section>
-                        <q-card-section class="q-pb-sm">
-                            Sometimes the death timer cooldown is the only thing keeping that number from being higher.
-                        </q-card-section>
-                    </q-card>
+                    <award-card-component :name="topDeathsUser" award-title="Grim Reaper's best friend"
+                        description="Sometimes the death timer cooldown is the only thing keeping that number from being higher."
+                        image-src="https://i.kym-cdn.com/entries/icons/original/000/011/121/SKULL_TRUMPET_0-1_screenshot.png" />
                 </div>
                 <div class="col col-auto">
-                    <q-card class="card-container">
-                        <q-img src="https://media.istockphoto.com/photos/human-palm-touching-lawn-grass-low-angle-view-picture-id1349781282?k=20&m=1349781282&s=612x612&w=0&h=B7Uo9H1LAiG5_70747QgDDHculRCqPuZTQIC52gHJTA="
-                            style="height: 200px" />
-                        <q-card-section class="text-h6 q-mt-md">
-                            Biggest fuckin' nerd
-                        </q-card-section>
-                        <q-card-section class="text-h6 q-mt-md">
-                            {{ mostPlayedUser }}
-                        </q-card-section>
-                        <q-card-section class="q-pb-sm">
-                            Stop playing so much dota go touch grass.
-                        </q-card-section>
-                    </q-card>
+                    <award-card-component :name="mostPlayedUser" award-title="Biggest fuckin' nerd"
+                        description="Stop playing so much dota go touch grass."
+                        image-src="https://media.istockphoto.com/photos/human-palm-touching-lawn-grass-low-angle-view-picture-id1349781282?k=20&m=1349781282&s=612x612&w=0&h=B7Uo9H1LAiG5_70747QgDDHculRCqPuZTQIC52gHJTA=" />
                 </div>
             </div>
             <div class="row justify-evenly" style="width: 100%">
@@ -148,8 +118,10 @@
 </template>
   
 <script>
+import AwardCardComponent from 'components/AwardCardComponent.vue';
 export default {
     name: 'PlayersPage',
+    components: { AwardCardComponent },
     data() {
         return {
             maxValue: '',
@@ -338,33 +310,6 @@ export default {
   
   <!-- Add "scoped" attribute to limit CSS to this component only -->
 <style scoped>
-.card-container {
-    width: 400px;
-    height: 400px;
-    margin: 20px;
-    border-radius: 8px;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-    overflow: hidden;
-}
-
-.card-container q-img {
-    border-top-left-radius: 8px;
-    border-top-right-radius: 8px;
-}
-
-.text-h6 {
-    font-size: 1.25rem;
-    font-weight: bold;
-    color: #333;
-}
-
-.q-mt-md {
-    margin-top: 16px;
-}
-
-.q-pb-sm {
-    padding-bottom: 8px;
-}
 
 .flex-container {
     display: flex;

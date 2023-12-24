@@ -38,8 +38,8 @@
                 </div>
             </div>
             <div class="flex-break"></div>
-            <div class="row">
-                <div class="col col-auto" style="display: flex; flex-wrap: wrap;">
+            <div class="row justify-evenly" style="width: 100%">
+                <div class="col col-auto justify-evenly" style="display: flex; flex: 1 0 300px; flex-wrap: wrap;">
                     <div style="flex: 1 0 300px; max-width: 800px;" class="leaderboard">
                         <h1>
                             <svg class="ico-cup">
