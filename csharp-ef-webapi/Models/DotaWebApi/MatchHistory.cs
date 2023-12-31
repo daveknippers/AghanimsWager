@@ -10,37 +10,39 @@ public class MatchHistory
     [Key]
     [Column("match_id")]
     [JsonProperty("match_id")]
-    public long matchId { get; set; }
-    
+    public long MatchId { get; set; }
+
     [Column("series_id")]
     [JsonProperty("series_id")]
-    public int seriesId { get; set; }
+    public int SeriesId { get; set; }
 
     [Column("league_id")]
-    public int leagueId { get; set; }
+    public int LeagueId { get; set; }
 
     [Column("series_type")]
     [JsonProperty("series_type")]
-    public int seriesType { get; set; }
+    public int SeriesType { get; set; }
 
     [Column("match_seq_num")]
     [JsonProperty("match_seq_num")]
-    public long matchSeqNum { get; set; }
+    public long MatchSeqNum { get; set; }
 
     [Column("start_time")]
     [JsonProperty("start_time")]
-    public long startTime { get; set; }
+    public long StartTime { get; set; }
 
     [Column("lobby_type")]
     [JsonProperty("lobby_type")]
-    public int lobbyType { get; set; }
+    public int LobbyType { get; set; }
 
     [Column("radiant_team_id")]
     [JsonProperty("radiant_team_id")]
-    public long radiantTeamId { get; set; }
+    public long RadiantTeamId { get; set; }
 
     [Column("dire_team_id")]
     [JsonProperty("dire_team_id")]
-    public long direTeamId { get; set; }
-    // players
+    public long DireTeamId { get; set; }
+
+    [JsonProperty("players")]
+    public List<MatchHistoryPlayer> Players { get; set; } = new List<MatchHistoryPlayer>();
 }
