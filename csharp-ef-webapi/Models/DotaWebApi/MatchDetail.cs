@@ -68,7 +68,7 @@ public class MatchDetail
     public int HumanPlayers { get; set; }
 
     [Column("league_id")]
-    [JsonProperty("league_id")]
+    [JsonProperty("leagueid")]
     public int LeagueId { get; set; }
 
     [Column("game_mode")]
