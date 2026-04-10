@@ -165,11 +165,12 @@ public class WagerBot
 
     async Task LobbyPollLoop()
     {
-        while (_client.ConnectionState == ConnectionState.Connected)
+        while (true)
         {
             try
             {
-                await CheckLobbies();
+                if (_client.ConnectionState == ConnectionState.Connected)
+                    await CheckLobbies();
             }
             catch (Exception ex)
             {
