@@ -429,6 +429,7 @@ public class WagerBot
         }
 
         await ProcessPayouts(db, match);
+        await UpdateInfoMessageWithResult(match, tracked.InfoMessageId);
     }
 
     async Task CheckPendingResolutions(WagerContext db)
@@ -454,6 +455,7 @@ public class WagerBot
             {
                 Log($"Match {matchId} resolved via retry: {match.Outcome}");
                 await ProcessPayouts(db, match);
+                await UpdateInfoMessageWithResult(match, match.InfoMessageId);
                 resolved.Add(matchId);
             }
         }
@@ -709,6 +711,43 @@ public class WagerBot
         var mapping = await db.DiscordMappings
             .FirstOrDefaultAsync(d => d.AccountId == accountId);
         return mapping?.DiscordName ?? "";
+    }
+
+    async Task UpdateInfoMessageWithResult(Match match, ulong infoMessageId)
+    {
+        if (_infoChannel == null || infoMessageId == 0) return;
+
+        try
+        {
+            var msg = await _infoChannel.GetMessageAsync(infoMessageId) as IUserMessage;
+            if (msg == null) return;
+
+            var winnerStr = match.Outcome switch
+            {
+                MatchOutcome.Radiant => "Winner: Radiant",
+                MatchOutcome.Dire => "Winner: Dire",
+                MatchOutcome.Error => "Match Cancelled",
+                _ => match.Outcome.ToString(),
+            };
+
+            // Replace the betting status line with the result
+            var content = msg.Content;
+            foreach (var status in new[] { "Bets are closed", "Bets are open!", "Betting opens during pick phase" })
+            {
+                if (content.Contains(status))
+                {
+                    content = content.Replace(status, winnerStr);
+                    break;
+                }
+            }
+
+            if (content != msg.Content)
+                await msg.ModifyAsync(m => m.Content = content);
+        }
+        catch (Exception ex)
+        {
+            Log($"Failed to update info message with result: {ex.Message}");
+        }
     }
 
     public async Task<string?> BuildMatchScoreboard(long matchId)
