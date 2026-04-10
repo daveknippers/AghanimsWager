@@ -1,0 +1,13 @@
+bin/
+obj/
+*.user
+*.suo
+.vs/
+.idea/
+appsettings.json
+appsettings.*.json
+!appsettings.template.json
+__pycache__/
+*.db
+*.db-shm
+*.db-wal
