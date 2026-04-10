@@ -1,8 +1,11 @@
 using System.Collections.Concurrent;
+using System.Reflection;
 using System.Text.Json;
 using Discord;
+using Discord.Interactions;
 using Discord.WebSocket;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using AghanimsWager.Data;
 using AghanimsWager.Data.Models;
 
@@ -10,14 +13,16 @@ namespace AghanimsWager.Discord;
 
 public class WagerBot
 {
-    readonly long _superuserId;
-
     readonly string _token;
     readonly string _steamApiKey;
     readonly DbContextOptions<WagerContext> _dbOptions;
     readonly DiscordSocketClient _client;
+    readonly InteractionService _interactionService;
+    readonly IServiceProvider _services;
     readonly HttpClient _http = new();
     readonly Dictionary<int, string> _heroNames = new();
+
+    public long SuperuserId { get; }
 
     SocketTextChannel? _infoChannel;
     SocketTextChannel? _bettingChannel;
@@ -35,7 +40,7 @@ public class WagerBot
     {
         _token = token;
         _steamApiKey = steamApiKey;
-        _superuserId = superuserId;
+        SuperuserId = superuserId;
         _dbOptions = dbOptions;
 
         var config = new DiscordSocketConfig
@@ -43,7 +48,14 @@ public class WagerBot
             GatewayIntents = GatewayIntents.AllUnprivileged | GatewayIntents.MessageContent,
         };
         _client = new DiscordSocketClient(config);
+        _interactionService = new InteractionService(_client);
+
+        _services = new ServiceCollection()
+            .AddSingleton(this)
+            .BuildServiceProvider();
+
         _client.Ready += OnReady;
+        _client.InteractionCreated += OnInteractionCreated;
         _client.MessageReceived += OnMessageReceived;
 
         LoadHeroData();
@@ -77,9 +89,15 @@ public class WagerBot
         await _client.StopAsync();
     }
 
-    Task OnReady()
+    async Task OnReady()
     {
         Log("Bot ready");
+
+        await _interactionService.AddModulesAsync(Assembly.GetExecutingAssembly(), _services);
+        await _client.Rest.DeleteAllGlobalCommandsAsync();
+        foreach (var guild in _client.Guilds)
+            await _interactionService.RegisterCommandsToGuildAsync(guild.Id);
+        Log("Slash commands registered");
 
         foreach (var guild in _client.Guilds)
         {
@@ -95,7 +113,12 @@ public class WagerBot
             await ResumeUnfinishedMatches();
             await LobbyPollLoop();
         });
-        return Task.CompletedTask;
+    }
+
+    async Task OnInteractionCreated(SocketInteraction interaction)
+    {
+        var ctx = new SocketInteractionContext(_client, interaction);
+        await _interactionService.ExecuteCommandAsync(ctx, _services);
     }
 
     async Task ResumeUnfinishedMatches()
@@ -355,7 +378,7 @@ public class WagerBot
 
             if (playerLines.Count > 0)
             {
-                var betHint = tracked.BettingOpen ? $"\n!bet {match.MatchId} radiant/dire amount" : "";
+                var betHint = tracked.BettingOpen ? $"\n/bet {match.MatchId} radiant/dire amount" : "";
                 var announceContent = $"```Match {match.MatchId}\n{string.Join('\n', playerLines)}\n\n{tracked.GamblingStatus}{betHint}```";
 
                 if (tracked.AnnounceMessageId == 0)
@@ -591,330 +614,10 @@ public class WagerBot
             Log($"DM from {message.Author.Username} — shaming");
             await message.Channel.SendMessageAsync(
                 $"{message.Author.Mention}, ALL COMMUNICATION MUST NOW BE PUBLIC");
-            return;
-        }
-
-        if (message.Channel is not SocketTextChannel textChannel) return;
-        if (textChannel.Name != "aghanims-wager") return;
-
-        var content = message.Content.Trim();
-        if (!content.StartsWith('!')) return;
-
-        var parts = content.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        var command = parts[0].ToLowerInvariant();
-
-        Log($"{message.Author.Username}: {content}");
-
-        await using var db = new WagerContext(_dbOptions);
-
-        try
-        {
-        switch (command)
-        {
-            case "!bet":
-                await HandleBet(db, message, parts);
-                break;
-            case "!balance":
-                await HandleBalance(db, message);
-                break;
-            case "!leaderboard":
-            case "!leaderboards":
-                await HandleLeaderboard(db, message);
-                break;
-            case "!feederboard":
-                await HandleFeederboard(db, message);
-                break;
-            case "!add_steam_id":
-                await HandleAddSteamId(db, message, parts);
-                break;
-            case "!tip":
-                await HandleTip(db, message, parts);
-                break;
-            case "!active_bets":
-                await HandleActiveBets(db, message, parts);
-                break;
-            case "!hi":
-                await message.Channel.SendMessageAsync($"{message.Author.Mention} ?");
-                break;
-            case "!redistribute_wealth":
-                await HandleRedistributeWealth(db, message);
-                break;
-            case "!help":
-                await HandleHelp(message);
-                break;
-        }
-        }
-        catch (Exception ex)
-        {
-            Log($"Command error: {ex}");
-            await message.Channel.SendMessageAsync($"Something broke: {ex.Message}");
         }
     }
 
-    async Task HandleHelp(SocketMessage message)
-    {
-        var help = string.Join('\n', new[]
-        {
-            "Aghanim's Wager — Commands",
-            "",
-            "!bet <match_id> <radiant/dire> <amount>",
-            "    Place a bet on an active match",
-            "!balance",
-            "    Check your golden salt balance",
-            "!active_bets [match_id]",
-            "    Show active bets (optionally filter by match)",
-            "!leaderboard",
-            "    Top 20 richest gamblers",
-            "!feederboard",
-            "    The cooler leaderboard",
-            "!add_steam_id <steam_id | profile_url>",
-            "    Link your Steam account for auto-bets",
-            "!add_steam_id --update <steam_id | profile_url | vanity_name>",
-            "    Change your linked Steam account",
-            "!tip @user",
-            "    Send 1 golden salt to a friend",
-            "!redistribute_wealth",
-            "    Communism (superuser only)",
-            "!help",
-            "    This message",
-        });
-        await SendLong((ISocketMessageChannel)message.Channel, help);
-    }
-
-    async Task HandleBet(WagerContext db, SocketMessage message, string[] parts)
-    {
-        var mention = message.Author.Mention;
-
-        if (parts.Length != 4)
-        {
-            await message.Channel.SendMessageAsync($"{mention}, try !bet match_id side amount");
-            return;
-        }
-
-        if (!long.TryParse(parts[1], out var matchId))
-        {
-            await message.Channel.SendMessageAsync($"{mention}, match_id must be an integer");
-            return;
-        }
-
-        var sideStr = parts[2].ToLowerInvariant();
-        MatchOutcome side;
-        if (sideStr == "radiant") side = MatchOutcome.Radiant;
-        else if (sideStr == "dire") side = MatchOutcome.Dire;
-        else
-        {
-            await message.Channel.SendMessageAsync($"{mention}, must enter side as either radiant or dire");
-            return;
-        }
-
-        if (!long.TryParse(parts[3], out var amount) || amount <= 0)
-        {
-            await message.Channel.SendMessageAsync($"{mention}, amount must be a non-negative integer");
-            return;
-        }
-
-        var discordId = (long)message.Author.Id;
-
-        var tracked = _trackedLobbies.Values.FirstOrDefault(t => t.MatchId == matchId);
-        if (tracked == null || !tracked.BettingOpen)
-        {
-            await message.Channel.SendMessageAsync($"{mention}, betting for {matchId} is closed");
-            return;
-        }
-
-        var account = await EnsureAccount(db, discordId);
-
-        if (account.Tokens < amount)
-        {
-            await message.Channel.SendMessageAsync($"{mention}, insufficient balance.");
-            return;
-        }
-
-        var existingBets = await db.Wagers
-            .Where(w => w.MatchId == matchId && w.GamblerId == discordId && !w.Finalized)
-            .ToListAsync();
-
-        if (existingBets.Any(b => b.Side != side))
-        {
-            await message.Channel.SendMessageAsync($"{mention}, cannot bet on both sides.");
-            return;
-        }
-
-        account.Tokens -= amount;
-        db.Wagers.Add(new Wager
-        {
-            MatchId = matchId,
-            GamblerId = discordId,
-            Side = side,
-            Amount = amount,
-            IsAutobet = false,
-            Finalized = false,
-            PlacedAt = DateTimeOffset.UtcNow,
-        });
-        await db.SaveChangesAsync();
-
-        var sideLog = side == MatchOutcome.Radiant ? "Radiant" : "Dire";
-        Log($"Bet placed: {message.Author.Username} bet {amount} on {sideLog} for match {matchId}");
-
-        var sideDisplay = side == MatchOutcome.Radiant ? "Radiant" : "Dire";
-        await message.Channel.SendMessageAsync(
-            $"{mention}, bet {amount} {Constants.Currency} on {sideDisplay} win for match id {matchId}.");
-    }
-
-    async Task HandleBalance(WagerContext db, SocketMessage message)
-    {
-        var discordId = (long)message.Author.Id;
-        var account = await EnsureAccount(db, discordId);
-
-        var suffix = account.Tokens == 1 ? Constants.Currency : Constants.Currency + "s";
-        await message.Channel.SendMessageAsync(
-            $"{message.Author.Mention}, you have {account.Tokens} {suffix}");
-    }
-
-    async Task HandleLeaderboard(WagerContext db, SocketMessage message)
-    {
-        var accounts = await db.GamblerAccounts
-            .OrderByDescending(a => a.Tokens)
-            .Take(20)
-            .ToListAsync();
-
-        if (accounts.Count == 0)
-        {
-            await message.Channel.SendMessageAsync("```No players yet```");
-            return;
-        }
-
-        var lines = new List<string> { $"{"#",5} {"Salt",12} {"Streak",8} {"Best",6} | Name" };
-        lines.Add(new string('-', 51));
-        for (int i = 0; i < accounts.Count; i++)
-        {
-            var a = accounts[i];
-            var user = await _client.GetUserAsync((ulong)a.DiscordId);
-            var name = user?.Username ?? a.DiscordId.ToString();
-            var streak = a.CurrentStreak > 0 ? a.CurrentStreak.ToString() : "";
-            var best = a.BestStreak > 0 ? a.BestStreak.ToString() : "";
-            lines.Add($"{i + 1,5} {a.Tokens,12} {streak,8} {best,6} | {name}");
-        }
-
-        await SendLong(_bettingChannel ?? (ISocketMessageChannel)message.Channel, string.Join('\n', lines));
-    }
-
-    async Task HandleFeederboard(WagerContext db, SocketMessage message)
-    {
-        // This would need match detail data to work properly.
-        // Placeholder that acknowledges the command exists.
-        await message.Channel.SendMessageAsync(
-            "```The cooler leaderboard is under construction.```");
-    }
-
-    async Task HandleAddSteamId(WagerContext db, SocketMessage message, string[] parts)
-    {
-        var mention = message.Author.Mention;
-
-        // Accept: !add_steam_id <input> or !add_steam_id --update <input>
-        bool isUpdate = parts.Any(p => p == "--update");
-        var nonFlagParts = parts.Where(p => p != "--update").ToArray();
-
-        if (nonFlagParts.Length != 2)
-        {
-            await message.Channel.SendMessageAsync(
-                $"{mention}, try: !add_steam_id <steam_id | profile_url>");
-            return;
-        }
-
-        var input = nonFlagParts[1].Trim('<', '>').TrimEnd('/');
-        long? steamId = null;
-
-        // Raw 17-digit Steam ID
-        if (input.Length == 17 && input.All(char.IsDigit))
-        {
-            steamId = long.Parse(input);
-        }
-        // https://steamcommunity.com/profiles/76561198...
-        else if (input.Contains("steamcommunity.com/profiles/"))
-        {
-            var segment = input.Split("/profiles/", 2)[1].Split('/')[0];
-            if (segment.Length == 17 && segment.All(char.IsDigit))
-                steamId = long.Parse(segment);
-        }
-        // https://steamcommunity.com/id/vanityname
-        else if (input.Contains("steamcommunity.com/id/"))
-        {
-            var vanity = input.Split("/id/", 2)[1].Split('/')[0];
-            steamId = await ResolveVanityUrl(vanity);
-        }
-        // Bare vanity names not supported — use the full profile URL
-
-        if (steamId == null)
-        {
-            await message.Channel.SendMessageAsync($"{mention}, couldn't resolve that to a Steam ID.");
-            return;
-        }
-
-        var accountId = SteamIdToAccountId(steamId.Value);
-        var discordId = (long)message.Author.Id;
-
-        await EnsureAccount(db, discordId);
-
-        var existing = await db.DiscordMappings.FindAsync(discordId);
-        if (existing != null)
-        {
-            if (existing.SteamId == steamId.Value)
-            {
-                await message.Channel.SendMessageAsync($"{mention}, you're already linked to Steam {steamId.Value}.");
-                return;
-            }
-
-            // Check for --update flag
-            if (!isUpdate)
-            {
-                await message.Channel.SendMessageAsync(
-                    $"{mention}, you're already linked to Steam {existing.SteamId}. " +
-                    $"This would change it to {steamId.Value}. " +
-                    $"Use `!add_steam_id --update <steam_id>` to confirm the change.");
-                return;
-            }
-
-            existing.SteamId = steamId.Value;
-            existing.AccountId = accountId;
-            existing.DiscordName = message.Author.Username;
-        }
-        else
-        {
-            db.DiscordMappings.Add(new DiscordMapping
-            {
-                DiscordId = discordId,
-                SteamId = steamId.Value,
-                AccountId = accountId,
-                DiscordName = message.Author.Username,
-            });
-        }
-
-        var isFriend = await db.Friends.AnyAsync(f => f.SteamId == steamId.Value);
-
-        if (!isFriend)
-        {
-            // Queue a friend request so the GC bot can add them
-            if (!await db.PendingFriendRequests.AnyAsync(r => r.SteamId == steamId.Value))
-            {
-                db.PendingFriendRequests.Add(new PendingFriendRequest
-                {
-                    SteamId = steamId.Value,
-                    RequestedAt = DateTimeOffset.UtcNow,
-                });
-            }
-        }
-
-        await db.SaveChangesAsync();
-
-        Log($"Linked {message.Author.Username} to Steam {steamId.Value} (account {accountId}), friend: {isFriend}");
-        var response = $"Linked {mention} to Steam {steamId.Value}";
-        if (!isFriend)
-            response += "\nYou are not on the bot's friends list — a friend request should arrive within a minute. Accept it so the bot can track your games.";
-        await message.Channel.SendMessageAsync(response);
-    }
-
-    async Task<long?> ResolveVanityUrl(string vanityName)
+    public async Task<long?> ResolveVanityUrl(string vanityName)
     {
         if (string.IsNullOrEmpty(_steamApiKey))
             return null;
@@ -935,145 +638,27 @@ public class WagerBot
         return null;
     }
 
-    async Task HandleTip(WagerContext db, SocketMessage message, string[] parts)
+    public WagerContext CreateDbContext() => new WagerContext(_dbOptions);
+
+    public TrackedLobby? GetTrackedLobbyByMatchId(long matchId) =>
+        _trackedLobbies.Values.FirstOrDefault(t => t.MatchId == matchId);
+
+    public bool IsOnTipCooldown(long discordId, out int remainingMinutes)
     {
-        var mention = message.Author.Mention;
-
-        if (message.MentionedUsers.Count != 1)
-        {
-            await message.Channel.SendMessageAsync($"{mention}, usage: !tip @user");
-            return;
-        }
-
-        var tipee = message.MentionedUsers.First();
-        if (tipee.Id == message.Author.Id) return;
-
-        var tipperId = (long)message.Author.Id;
-        if (_tipCooldowns.TryGetValue(tipperId, out var lastTip) &&
+        remainingMinutes = 0;
+        if (_tipCooldowns.TryGetValue(discordId, out var lastTip) &&
             DateTimeOffset.UtcNow - lastTip < TimeSpan.FromHours(1))
         {
-            var remaining = (int)(TimeSpan.FromHours(1) - (DateTimeOffset.UtcNow - lastTip)).TotalMinutes;
-            await message.Channel.SendMessageAsync($"{mention}, you can tip again in {remaining} minute{(remaining == 1 ? "" : "s")}.");
-            return;
+            remainingMinutes = (int)(TimeSpan.FromHours(1) - (DateTimeOffset.UtcNow - lastTip)).TotalMinutes;
+            return true;
         }
-
-        var tipeeId = (long)tipee.Id;
-
-        var tipper = await db.GamblerAccounts.FindAsync(tipperId);
-        if (tipper == null || tipper.Tokens < Constants.SaltMine + 1)
-        {
-            await message.Channel.SendMessageAsync($"{mention}, you're too poor.");
-            return;
-        }
-
-        var tipeeAccount = await db.GamblerAccounts.FindAsync(tipeeId);
-        if (tipeeAccount == null)
-        {
-            await message.Channel.SendMessageAsync(
-                $"User {tipee.Mention} isn't participating in Aghanim's Wager.");
-            return;
-        }
-
-        tipper.Tokens -= 1;
-        tipeeAccount.Tokens += 1;
-        await db.SaveChangesAsync();
-
-        _tipCooldowns[tipperId] = DateTimeOffset.UtcNow;
-        Log($"Tip: {message.Author.Username} -> {tipee.Username}");
-        await message.Channel.SendMessageAsync(
-            $"{mention} sent {tipee.Mention} a salty tip.");
+        return false;
     }
 
-    async Task HandleActiveBets(WagerContext db, SocketMessage message, string[] parts)
-    {
-        var mention = message.Author.Mention;
-        IQueryable<Wager> query = db.Wagers.Where(w => !w.Finalized);
+    public void RecordTip(long discordId) =>
+        _tipCooldowns[discordId] = DateTimeOffset.UtcNow;
 
-        if (parts.Length == 2 && long.TryParse(parts[1], out var filterMatchId))
-            query = query.Where(w => w.MatchId == filterMatchId);
-
-        var bets = await query.ToListAsync();
-        if (bets.Count == 0)
-        {
-            await message.Channel.SendMessageAsync($"{mention}, there are no active bets");
-            return;
-        }
-
-        var grouped = bets
-            .GroupBy(b => new { b.MatchId, b.GamblerId, b.Side })
-            .Select(g => new { g.Key.MatchId, g.Key.GamblerId, g.Key.Side, Amount = g.Sum(w => w.Amount) })
-            .OrderBy(g => g.MatchId);
-
-        var lines = new List<string>();
-        foreach (var g in grouped)
-        {
-            var user = await _client.GetUserAsync((ulong)g.GamblerId);
-            var name = user?.Username ?? g.GamblerId.ToString();
-            var sideStr = g.Side == MatchOutcome.Radiant ? "Radiant" : "Dire";
-            lines.Add($"{g.MatchId} | {sideStr,7} | {g.Amount,12} | {name}");
-        }
-
-        await SendLong((ISocketMessageChannel)message.Channel, string.Join('\n', lines));
-    }
-
-    async Task HandleRedistributeWealth(WagerContext db, SocketMessage message)
-    {
-        if ((long)message.Author.Id != _superuserId)
-        {
-            await message.Channel.SendMessageAsync($"{message.Author.Mention}, No.");
-            return;
-        }
-
-        var accounts = await db.GamblerAccounts
-            .Where(a => a.DiscordId > 0)
-            .OrderByDescending(a => a.Tokens)
-            .ToListAsync();
-
-        if (accounts.Count == 0)
-        {
-            await message.Channel.SendMessageAsync("There's no users in the database");
-            return;
-        }
-
-        const double taxRate = 0.05;
-        var totalTokens = accounts.Sum(a => a.Tokens);
-        if (totalTokens == 0)
-        {
-            await message.Channel.SendMessageAsync("Everyone is broke. The revolution has already won.");
-            return;
-        }
-
-        var totalTax = accounts.Sum(a => (long)Math.Floor(a.Tokens * taxRate));
-        var perPerson = totalTax / accounts.Count;
-
-        // Check if redistribution would actually change anything
-        var wouldChange = accounts.Any(a => (long)Math.Floor(a.Tokens * taxRate) != perPerson);
-        if (!wouldChange)
-        {
-            await message.Channel.SendMessageAsync("The proletariat are already equal, comrade. There is nothing to redistribute.");
-            return;
-        }
-
-        var remainder = totalTax - (perPerson * accounts.Count);
-
-        foreach (var a in accounts)
-        {
-            var tax = (long)Math.Floor(a.Tokens * taxRate);
-            a.Tokens += perPerson - tax;
-        }
-
-        // Spread leftover salt one at a time from poorest up
-        var byPoorest = accounts.OrderBy(a => a.Tokens).ToList();
-        for (int i = 0; i < remainder; i++)
-            byPoorest[i % byPoorest.Count].Tokens++;
-
-        await db.SaveChangesAsync();
-        Log($"Wealth redistributed: {totalTax} {Constants.Currency} across {accounts.Count} accounts");
-        await message.Channel.SendMessageAsync(
-            $"Rejoice, My Comrades! {totalTax} {Constants.Currency} has been redistributed.");
-    }
-
-    async Task<GamblerAccount> EnsureAccount(WagerContext db, long discordId)
+    public async Task<GamblerAccount> EnsureAccount(WagerContext db, long discordId)
     {
         var account = await db.GamblerAccounts.FindAsync(discordId);
         if (account != null)
@@ -1110,7 +695,7 @@ public class WagerBot
         return mapping?.DiscordName ?? "";
     }
 
-    static long SteamIdToAccountId(long steamId64)
+    public static long SteamIdToAccountId(long steamId64)
     {
         const long id64Base = 76561197960265728;
         return steamId64 - id64Base;
@@ -1139,7 +724,7 @@ public class WagerBot
             await channel.SendMessageAsync($"```{msg}```");
     }
 
-    static void Log(string message)
+    public static void Log(string message)
     {
         Console.Write($"\r{new string(' ', Console.WindowWidth - 1)}\r");
         Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [Discord] {message}");

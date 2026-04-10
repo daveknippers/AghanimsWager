@@ -17,7 +17,7 @@ When a friend starts a Dota 2 match, the GC bot detects it through Steam rich pr
 - Automatic match detection via Steam friend rich presence
 - Live match display with hero picks, scores, and game time
 - Auto-betting for linked Steam accounts (players bet on themselves)
-- Manual betting with `!bet` during the betting window
+- Manual betting with `/bet` during the betting window
 - Betting window countdown with configurable close timer
 - Leaderboard with balances and win streaks
 - Salt mine (minimum balance floor so nobody goes completely broke)
@@ -27,12 +27,12 @@ When a friend starts a Dota 2 match, the GC bot detects it through Steam rich pr
 
 | Command | Description |
 |---|---|
-| `!bet <match_id> <radiant/dire> <amount>` | Place a bet on an active match |
-| `!balance` | Check your golden salt balance |
-| `!leaderboard` | Top players by balance, with streaks |
-| `!tip <@user> <amount>` | Tip another player |
-| `!add_steam_id <steam_profile_url>` | Link your Discord account to your Steam profile |
-| `!help` | List available commands |
+| `/bet <match_id> <side> <amount>` | Place a bet on an active match |
+| `/balance` | Check your golden salt balance |
+| `/leaderboard` | Top players by balance, with streaks |
+| `/tip <@user>` | Tip another player |
+| `/add_steam_id <steam_id>` | Link your Discord account to your Steam profile |
+| `/help` | List available commands |
 
 ## Architecture
 
