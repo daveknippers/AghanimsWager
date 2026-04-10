@@ -60,13 +60,13 @@ cp AghanimsWager.GC/appsettings.template.json AghanimsWager.GC/appsettings.json
 cp AghanimsWager.Discord/appsettings.template.json AghanimsWager.Discord/appsettings.json
 ```
 
-The GC bot needs Steam credentials and an API key. The Discord bot needs a Discord bot token and a Steam API key. Both need a path to the shared SQLite database. The `appsettings.json` files are gitignored.
+The GC bot needs Steam credentials and an API key. The Discord bot needs a Discord bot token and a Steam API key. Both need a path to the shared SQLite database.
 
 Run both processes:
 
 ```sh
-dotnet run --project AghanimsWager.GC
-dotnet run --project AghanimsWager.Discord
+cd AghanimsWager.GC && dotnet run
+cd AghanimsWager.Discord && dotnet run
 ```
 
 ## Currency
