@@ -642,7 +642,7 @@ public class WagerBot
 
         try
         {
-            var url = $"http://api.steampowered.com/ISteamUser/ResolveVanityURL/v1/?key={Uri.EscapeDataString(_steamApiKey)}&vanityurl={Uri.EscapeDataString(vanityName)}";
+            var url = $"https://api.steampowered.com/ISteamUser/ResolveVanityURL/v1/?key={Uri.EscapeDataString(_steamApiKey)}&vanityurl={Uri.EscapeDataString(vanityName)}";
             var json = await _http.GetStringAsync(url);
             using var doc = JsonDocument.Parse(json);
             var resp = doc.RootElement.GetProperty("response");

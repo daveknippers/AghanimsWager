@@ -2,6 +2,7 @@ using Discord;
 using Discord.Interactions;
 using Discord.WebSocket;
 using Microsoft.EntityFrameworkCore;
+using System.Data;
 using AghanimsWager.Data;
 using AghanimsWager.Data.Models;
 
@@ -50,41 +51,53 @@ public class WagerModule : InteractionModuleBase<SocketInteractionContext>
             return;
         }
 
-        var account = await _bot.EnsureAccount(db, discordId);
-
-        if (account.Tokens < amount)
+        using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+        try
         {
-            await RespondAsync($"{mention}, insufficient balance.");
-            return;
-        }
+            var account = await _bot.EnsureAccount(db, discordId);
 
-        var existingBets = await db.Wagers
-            .Where(w => w.MatchId == match_id && w.GamblerId == discordId && !w.Finalized)
-            .ToListAsync();
-
-        if (existingBets.Any(b => b.Side != betSide))
-        {
-            if (!_bot.AllowOpposingBets && existingBets.Any(b => b.IsAutobet))
+            if (account.Tokens < amount)
             {
-                await RespondAsync($"{mention}, you can't bet against your own team.");
+                await RespondAsync($"{mention}, insufficient balance.");
                 return;
             }
-            await RespondAsync($"{mention}, cannot bet on both sides.");
+
+            var existingBets = await db.Wagers
+                .Where(w => w.MatchId == match_id && w.GamblerId == discordId && !w.Finalized)
+                .ToListAsync();
+
+            if (existingBets.Any(b => b.Side != betSide))
+            {
+                if (!_bot.AllowOpposingBets && existingBets.Any(b => b.IsAutobet))
+                {
+                    await RespondAsync($"{mention}, you can't bet against your own team.");
+                    return;
+                }
+                await RespondAsync($"{mention}, cannot bet on both sides.");
+                return;
+            }
+
+            account.Tokens -= amount;
+            db.Wagers.Add(new Wager
+            {
+                MatchId = match_id,
+                GamblerId = discordId,
+                Side = betSide,
+                Amount = amount,
+                IsAutobet = false,
+                Finalized = false,
+                PlacedAt = DateTimeOffset.UtcNow,
+            });
+            await db.SaveChangesAsync();
+            await transaction.CommitAsync();
+        }
+        catch (Exception ex)
+        {
+            await transaction.RollbackAsync();
+            WagerBot.Log($"Bet transaction failed: {ex.Message}");
+            await RespondAsync($"{mention}, bet failed — try again.");
             return;
         }
-
-        account.Tokens -= amount;
-        db.Wagers.Add(new Wager
-        {
-            MatchId = match_id,
-            GamblerId = discordId,
-            Side = betSide,
-            Amount = amount,
-            IsAutobet = false,
-            Finalized = false,
-            PlacedAt = DateTimeOffset.UtcNow,
-        });
-        await db.SaveChangesAsync();
 
         var sideDisplay = betSide == MatchOutcome.Radiant ? "Radiant" : "Dire";
         WagerBot.Log($"Bet placed: {Context.User.Username} bet {amount} on {sideDisplay} for match {match_id}");
@@ -301,24 +314,36 @@ public class WagerModule : InteractionModuleBase<SocketInteractionContext>
 
         var tipeeId = (long)user.Id;
 
-        var tipper = await db.GamblerAccounts.FindAsync(tipperId);
-        if (tipper == null || tipper.Tokens < Constants.SaltMine + 1)
+        using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+        try
         {
-            await RespondAsync($"{mention}, you're too poor.");
+            var tipper = await db.GamblerAccounts.FindAsync(tipperId);
+            if (tipper == null || tipper.Tokens < Constants.SaltMine + 1)
+            {
+                await RespondAsync($"{mention}, you're too poor.");
+                return;
+            }
+
+            var tipeeAccount = await db.GamblerAccounts.FindAsync(tipeeId);
+            if (tipeeAccount == null)
+            {
+                await RespondAsync(
+                    $"User {user.Mention} isn't participating in Aghanim's Wager.");
+                return;
+            }
+
+            tipper.Tokens -= 1;
+            tipeeAccount.Tokens += 1;
+            await db.SaveChangesAsync();
+            await transaction.CommitAsync();
+        }
+        catch (Exception ex)
+        {
+            await transaction.RollbackAsync();
+            WagerBot.Log($"Tip transaction failed: {ex.Message}");
+            await RespondAsync($"{mention}, tip failed — try again.");
             return;
         }
-
-        var tipeeAccount = await db.GamblerAccounts.FindAsync(tipeeId);
-        if (tipeeAccount == null)
-        {
-            await RespondAsync(
-                $"User {user.Mention} isn't participating in Aghanim's Wager.");
-            return;
-        }
-
-        tipper.Tokens -= 1;
-        tipeeAccount.Tokens += 1;
-        await db.SaveChangesAsync();
 
         _bot.RecordTip(tipperId);
         WagerBot.Log($"Tip: {Context.User.Username} -> {user.Username}");
