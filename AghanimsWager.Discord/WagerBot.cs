@@ -10,7 +10,7 @@ namespace AghanimsWager.Discord;
 
 public class WagerBot
 {
-    const long SuperuserId = 148293973331542017;
+    readonly long _superuserId;
 
     readonly string _token;
     readonly string _steamApiKey;
@@ -31,10 +31,11 @@ public class WagerBot
     // Tip cooldowns (discordId -> last tip time)
     readonly ConcurrentDictionary<long, DateTimeOffset> _tipCooldowns = new();
 
-    public WagerBot(string token, string steamApiKey, DbContextOptions<WagerContext> dbOptions)
+    public WagerBot(string token, string steamApiKey, long superuserId, DbContextOptions<WagerContext> dbOptions)
     {
         _token = token;
         _steamApiKey = steamApiKey;
+        _superuserId = superuserId;
         _dbOptions = dbOptions;
 
         var config = new DiscordSocketConfig
@@ -1017,7 +1018,7 @@ public class WagerBot
 
     async Task HandleRedistributeWealth(WagerContext db, SocketMessage message)
     {
-        if ((long)message.Author.Id != SuperuserId)
+        if ((long)message.Author.Id != _superuserId)
         {
             await message.Channel.SendMessageAsync($"{message.Author.Mention}, No.");
             return;

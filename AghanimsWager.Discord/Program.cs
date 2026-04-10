@@ -11,6 +11,7 @@ var config = new ConfigurationBuilder()
 
 var discordToken = config["DISCORD_TOKEN"] ?? throw new InvalidOperationException("Set AW_DISCORD_TOKEN");
 var steamApiKey = config["STEAM_API_KEY"] ?? "";
+var superuserId = long.TryParse(config["SUPERUSER_ID"], out var sid) ? sid : 0L;
 var connString = config["CONNECTION_STRING"] ?? "Data Source=AghanimsWager.db";
 
 var optionsBuilder = new DbContextOptionsBuilder<WagerContext>();
@@ -34,5 +35,5 @@ using (var db = new WagerContext(optionsBuilder.Options))
         db.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;");
 }
 
-var bot = new WagerBot(discordToken, steamApiKey, optionsBuilder.Options);
+var bot = new WagerBot(discordToken, steamApiKey, superuserId, optionsBuilder.Options);
 await bot.RunAsync(cts.Token);
