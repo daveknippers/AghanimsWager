@@ -129,23 +129,28 @@ public class WagerModule : InteractionModuleBase<SocketInteractionContext>
 
         if (accounts.Count == 0)
         {
-            await RespondAsync("```No players yet```");
+            await RespondAsync("No players yet.");
             return;
         }
 
-        var lines = new List<string> { $"{"#",5} {"Salt",12} {"Streak",8} {"Best",6} | Name" };
-        lines.Add(new string('-', 51));
+        var embed = new EmbedBuilder()
+            .WithTitle("Leaderboard")
+            .WithColor(Color.Gold);
+
+        var lines = new List<string>();
         for (int i = 0; i < accounts.Count; i++)
         {
             var a = accounts[i];
             var user = await Context.Client.GetUserAsync((ulong)a.DiscordId);
             var name = user?.GlobalName ?? user?.Username ?? a.DiscordId.ToString();
-            var streak = a.CurrentStreak > 0 ? a.CurrentStreak.ToString() : "";
-            var best = a.BestStreak > 0 ? a.BestStreak.ToString() : "";
-            lines.Add($"{i + 1,5} {a.Tokens,12} {streak,8} {best,6} | {name}");
+            var streakInfo = a.CurrentStreak > 0 || a.BestStreak > 0
+                ? $" (streak: {a.CurrentStreak}, best: {a.BestStreak})"
+                : "";
+            lines.Add($"**#{i + 1}** {name} — {a.Tokens:N0} salt{streakInfo}");
         }
 
-        await RespondAsync($"```{string.Join('\n', lines)}```");
+        embed.WithDescription(string.Join('\n', lines));
+        await RespondAsync(embed: embed.Build());
     }
 
     [SlashCommand("feederboard", "The cooler leaderboard")]
