@@ -133,24 +133,19 @@ public class WagerModule : InteractionModuleBase<SocketInteractionContext>
             return;
         }
 
-        var embed = new EmbedBuilder()
-            .WithTitle("Leaderboard")
-            .WithColor(Color.Gold);
-
+        var lines = new List<string> { $"{"#",5} {"Salt",12} {"Streak",8} {"Best",6} | Name" };
+        lines.Add(new string('-', 51));
         for (int i = 0; i < accounts.Count; i++)
         {
             var a = accounts[i];
             var user = await Context.Client.GetUserAsync((ulong)a.DiscordId);
             var name = user?.GlobalName ?? user?.Username ?? a.DiscordId.ToString();
-            var streak = a.CurrentStreak > 0 || a.BestStreak > 0
-                ? $"{a.CurrentStreak} (best: {a.BestStreak})"
-                : "-";
-            embed.AddField($"#{i + 1} {name}", "\u200b", inline: true);
-            embed.AddField("Salt", $"{a.Tokens:N0}", inline: true);
-            embed.AddField("Streak", streak, inline: true);
+            var streak = a.CurrentStreak > 0 ? a.CurrentStreak.ToString() : "";
+            var best = a.BestStreak > 0 ? a.BestStreak.ToString() : "";
+            lines.Add($"{i + 1,5} {a.Tokens,12} {streak,8} {best,6} | {name}");
         }
 
-        await RespondAsync(embed: embed.Build());
+        await RespondAsync($"```{string.Join('\n', lines)}```");
     }
 
     [SlashCommand("feederboard", "The cooler leaderboard")]
