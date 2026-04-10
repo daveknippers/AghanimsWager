@@ -137,19 +137,19 @@ public class WagerModule : InteractionModuleBase<SocketInteractionContext>
             .WithTitle("Leaderboard")
             .WithColor(Color.Gold);
 
-        var lines = new List<string>();
         for (int i = 0; i < accounts.Count; i++)
         {
             var a = accounts[i];
             var user = await Context.Client.GetUserAsync((ulong)a.DiscordId);
             var name = user?.GlobalName ?? user?.Username ?? a.DiscordId.ToString();
-            var streakInfo = a.CurrentStreak > 0 || a.BestStreak > 0
-                ? $" (streak: {a.CurrentStreak}, best: {a.BestStreak})"
-                : "";
-            lines.Add($"**#{i + 1}** {name} — {a.Tokens:N0} salt{streakInfo}");
+            var streak = a.CurrentStreak > 0 || a.BestStreak > 0
+                ? $"{a.CurrentStreak} (best: {a.BestStreak})"
+                : "-";
+            embed.AddField($"#{i + 1} {name}", "\u200b", inline: true);
+            embed.AddField("Salt", $"{a.Tokens:N0}", inline: true);
+            embed.AddField("Streak", streak, inline: true);
         }
 
-        embed.WithDescription(string.Join('\n', lines));
         await RespondAsync(embed: embed.Build());
     }
 
