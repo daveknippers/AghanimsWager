@@ -12,6 +12,7 @@ public class WagerContext : DbContext
     public DbSet<Match> Matches => Set<Match>();
     public DbSet<Wager> Wagers => Set<Wager>();
     public DbSet<GamblerAccount> GamblerAccounts => Set<GamblerAccount>();
+    public DbSet<MatchPlayer> MatchPlayers => Set<MatchPlayer>();
     public DbSet<PendingFriendRequest> PendingFriendRequests => Set<PendingFriendRequest>();
 
     public WagerContext(DbContextOptions<WagerContext> options) : base(options) { }
@@ -51,6 +52,14 @@ public class WagerContext : DbContext
             e.HasMany(m => m.Wagers)
                 .WithOne(w => w.Match)
                 .HasForeignKey(w => w.MatchId);
+            e.HasMany(m => m.Players)
+                .WithOne(p => p.Match)
+                .HasForeignKey(p => p.MatchId);
+        });
+
+        modelBuilder.Entity<MatchPlayer>(e =>
+        {
+            e.HasKey(p => new { p.MatchId, p.PlayerSlot });
         });
 
         modelBuilder.Entity<Wager>(e =>

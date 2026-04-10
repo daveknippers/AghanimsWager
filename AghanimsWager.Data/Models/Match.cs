@@ -13,6 +13,15 @@ public class Match
     public long MatchId { get; set; }
     public long LobbyId { get; set; }
     public MatchOutcome Outcome { get; set; } = MatchOutcome.Unresolved;
+    public int Duration { get; set; }
+    public int GameMode { get; set; }
+    public int LobbyType { get; set; }
+    public long StartTime { get; set; }
+    public int RadiantScore { get; set; }
+    public int DireScore { get; set; }
+    public int FirstBloodTime { get; set; }
+    public int Cluster { get; set; }
+    public int ReplaySalt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? ResolvedAt { get; set; }
 
@@ -23,4 +32,5 @@ public class Match
     public ulong AnnounceMessageId { get; set; }
 
     public List<Wager> Wagers { get; set; } = [];
+    public List<MatchPlayer> Players { get; set; } = [];
 }

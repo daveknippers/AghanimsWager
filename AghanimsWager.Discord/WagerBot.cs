@@ -23,6 +23,7 @@ public class WagerBot
     readonly Dictionary<int, string> _heroNames = new();
 
     public long SuperuserId { get; }
+    public bool AllowOpposingBets { get; }
 
     SocketTextChannel? _infoChannel;
     SocketTextChannel? _bettingChannel;
@@ -36,11 +37,12 @@ public class WagerBot
     // Tip cooldowns (discordId -> last tip time)
     readonly ConcurrentDictionary<long, DateTimeOffset> _tipCooldowns = new();
 
-    public WagerBot(string token, string steamApiKey, long superuserId, DbContextOptions<WagerContext> dbOptions)
+    public WagerBot(string token, string steamApiKey, long superuserId, bool allowOpposingBets, DbContextOptions<WagerContext> dbOptions)
     {
         _token = token;
         _steamApiKey = steamApiKey;
         SuperuserId = superuserId;
+        AllowOpposingBets = allowOpposingBets;
         _dbOptions = dbOptions;
 
         var config = new DiscordSocketConfig
@@ -118,7 +120,13 @@ public class WagerBot
     async Task OnInteractionCreated(SocketInteraction interaction)
     {
         var ctx = new SocketInteractionContext(_client, interaction);
-        await _interactionService.ExecuteCommandAsync(ctx, _services);
+        var result = await _interactionService.ExecuteCommandAsync(ctx, _services);
+        if (!result.IsSuccess)
+        {
+            Log($"Command error: {result.ErrorReason}");
+            if (!interaction.HasResponded)
+                await interaction.RespondAsync($"Something broke: {result.ErrorReason}");
+        }
     }
 
     async Task ResumeUnfinishedMatches()
@@ -476,7 +484,7 @@ public class WagerBot
             if (!userNameCache.TryGetValue(gamblerId, out var name))
             {
                 var user = await _client.GetUserAsync((ulong)gamblerId);
-                name = user?.Username ?? gamblerId.ToString();
+                name = user?.GlobalName ?? user?.Username ?? gamblerId.ToString();
                 userNameCache[gamblerId] = name;
             }
             return name;
@@ -602,6 +610,14 @@ public class WagerBot
 
         Log($"Payouts for match {match.MatchId}: {winners.Count} winners, {losers.Count} losers");
         await SendLong(_bettingChannel, string.Join('\n', resultLines));
+
+        // Post full scoreboard to info channel
+        if (_infoChannel != null)
+        {
+            var scoreboard = await BuildMatchScoreboard(match.MatchId);
+            if (scoreboard != null)
+                await SendLong(_infoChannel, scoreboard);
+        }
     }
 
     async Task OnMessageReceived(SocketMessage message)
@@ -685,7 +701,7 @@ public class WagerBot
         return account;
     }
 
-    string HeroName(int heroId) =>
+    public string HeroName(int heroId) =>
         _heroNames.GetValueOrDefault(heroId, $"Hero {heroId}");
 
     async Task<string> GetDiscordName(WagerContext db, long accountId)
@@ -693,6 +709,81 @@ public class WagerBot
         var mapping = await db.DiscordMappings
             .FirstOrDefaultAsync(d => d.AccountId == accountId);
         return mapping?.DiscordName ?? "";
+    }
+
+    public async Task<string?> BuildMatchScoreboard(long matchId)
+    {
+        await using var db = new WagerContext(_dbOptions);
+
+        var match = await db.Matches.FindAsync(matchId);
+        if (match == null || match.Duration == 0) return null;
+
+        var players = await db.MatchPlayers
+            .Where(p => p.MatchId == matchId)
+            .OrderBy(p => p.PlayerSlot)
+            .ToListAsync();
+
+        if (players.Count == 0) return null;
+
+        var duration = TimeSpan.FromSeconds(match.Duration);
+        var outcomeStr = match.Outcome switch
+        {
+            MatchOutcome.Radiant => "Radiant Victory",
+            MatchOutcome.Dire => "Dire Victory",
+            _ => match.Outcome.ToString(),
+        };
+
+        var lines = new List<string>
+        {
+            $"Match {matchId} — {outcomeStr} — {duration.Minutes}:{duration.Seconds:D2}",
+            $"Score: Radiant {match.RadiantScore} - {match.DireScore} Dire",
+            "",
+        };
+
+        // Map account IDs to discord names
+        var accountIds = players.Select(p => p.AccountId).ToList();
+        var dbMappings = await db.DiscordMappings
+            .Where(d => accountIds.Contains(d.AccountId))
+            .ToListAsync();
+        var mappings = new Dictionary<long, string>();
+        foreach (var m in dbMappings)
+        {
+            // Try to resolve live from guild for correct casing
+            IUser? guildUser = null;
+            foreach (var guild in _client.Guilds)
+            {
+                guildUser = guild.GetUser((ulong)m.DiscordId);
+                if (guildUser != null) break;
+            }
+            var name = guildUser?.GlobalName ?? guildUser?.Username ?? m.DiscordName ?? "";
+            mappings[m.AccountId] = name;
+        }
+
+        var heroW = players.Max(p => HeroName(p.HeroId).Length);
+        heroW = Math.Max(heroW, 4);
+
+        string FormatPlayer(MatchPlayer p)
+        {
+            var hero = HeroName(p.HeroId).PadRight(heroW);
+            var discord = mappings.TryGetValue(p.AccountId, out var name) && !string.IsNullOrEmpty(name) ? $" | {name}" : "";
+            var deadTime = TimeSpan.FromSeconds(p.SecondsDead);
+            return $" {hero}  {p.Kills,3} {p.Deaths,3} {p.Assists,3} {p.LastHits,4} {p.Denies,4} {p.GoldPerMin,4} {p.XpPerMin,4} {p.NetWorth,6} {p.HeroDamage,6} {p.TowerDamage,5} {p.BountyRunes,3} {deadTime.Minutes}:{deadTime.Seconds:D2}{discord}";
+        }
+
+        var header = $" {"Hero".PadRight(heroW)}  {"K",3} {"D",3} {"A",3} {"LH",4} {"DN",4} {"GPM",4} {"XPM",4} {"NW",6} {"HD",6} {"TD",5} {"BR",3} {"Dead",5}";
+
+        lines.Add("=== Radiant ===");
+        lines.Add(header);
+        foreach (var p in players.Where(p => p.TeamNumber == 0))
+            lines.Add(FormatPlayer(p));
+
+        lines.Add("");
+        lines.Add("=== Dire ===");
+        lines.Add(header);
+        foreach (var p in players.Where(p => p.TeamNumber == 1))
+            lines.Add(FormatPlayer(p));
+
+        return string.Join('\n', lines);
     }
 
     public static long SteamIdToAccountId(long steamId64)

@@ -535,14 +535,16 @@ public class DotaGCBot
         var match = response.match;
         Log($"Got match details for {match.match_id}, outcome: {match.match_outcome}");
 
-        // Store the match outcome in the database so the Discord bot can resolve bets
+        // Store match outcome and player stats
         Task.Run(async () =>
         {
             try
             {
                 await using var db = new WagerContext(_dbOptions);
                 var existing = await db.Matches.FindAsync((long)match.match_id);
-                if (existing != null && existing.Outcome == MatchOutcome.Unresolved)
+                if (existing == null) return;
+
+                if (existing.Outcome == MatchOutcome.Unresolved)
                 {
                     existing.Outcome = match.match_outcome switch
                     {
@@ -551,9 +553,91 @@ public class DotaGCBot
                         _ => MatchOutcome.Error,
                     };
                     existing.ResolvedAt = DateTimeOffset.UtcNow;
-                    await db.SaveChangesAsync();
-                    Log($"Match {match.match_id} resolved: {existing.Outcome}");
                 }
+
+                // Always update match-level details
+                existing.Duration = (int)match.duration;
+                existing.GameMode = (int)match.game_mode;
+                existing.LobbyType = (int)match.lobby_type;
+                existing.StartTime = match.starttime;
+                existing.RadiantScore = (int)match.radiant_team_score;
+                existing.DireScore = (int)match.dire_team_score;
+                existing.FirstBloodTime = (int)match.first_blood_time;
+                existing.Cluster = (int)match.cluster;
+                existing.ReplaySalt = (int)match.replay_salt;
+
+                // Save player data if not already present
+                var hasPlayers = await db.MatchPlayers.AnyAsync(p => p.MatchId == (long)match.match_id);
+                if (!hasPlayers)
+                {
+                    foreach (var p in match.players)
+                    {
+                        db.MatchPlayers.Add(new MatchPlayer
+                        {
+                            MatchId = (long)match.match_id,
+                            PlayerSlot = (int)p.player_slot,
+                            AccountId = (long)p.account_id,
+                            HeroId = p.hero_id,
+                            TeamNumber = (int)p.team_number,
+                            Kills = (int)p.kills,
+                            Deaths = (int)p.deaths,
+                            Assists = (int)p.assists,
+                            HeroDamage = (int)p.hero_damage,
+                            TowerDamage = (int)p.tower_damage,
+                            HeroHealing = (int)p.hero_healing,
+                            LastHits = (int)p.last_hits,
+                            Denies = (int)p.denies,
+                            GoldPerMin = (int)p.gold_per_min,
+                            XpPerMin = (int)p.xp_per_min,
+                            Gold = (int)p.gold,
+                            GoldSpent = (int)p.gold_spent,
+                            GoldLostToDeath = (int)p.gold_lost_to_death,
+                            NetWorth = (int)p.net_worth,
+                            SupportGold = (int)p.support_gold,
+                            ClaimedFarmGold = (int)p.claimed_farm_gold,
+                            Level = (int)p.level,
+                            Item0 = p.item_0,
+                            Item1 = p.item_1,
+                            Item2 = p.item_2,
+                            Item3 = p.item_3,
+                            Item4 = p.item_4,
+                            Item5 = p.item_5,
+                            Item6 = p.item_6,
+                            Item7 = p.item_7,
+                            Item8 = p.item_8,
+                            Item9 = p.item_9,
+                            Item10 = p.item_10,
+                            HeroPickOrder = (int)p.hero_pick_order,
+                            SelectedFacet = (int)p.selected_facet,
+                            HeroPlayCount = (int)p.hero_play_count,
+                            HeroWasRandomed = p.hero_was_randomed,
+                            ScaledKills = p.scaled_kills,
+                            ScaledDeaths = p.scaled_deaths,
+                            ScaledAssists = p.scaled_assists,
+                            ScaledHeroDamage = (int)p.scaled_hero_damage,
+                            ScaledTowerDamage = (int)p.scaled_tower_damage,
+                            ScaledHeroHealing = (int)p.scaled_hero_healing,
+                            ScaledMetric = p.scaled_metric,
+                            ExpectedTeamContribution = p.expected_team_contribution,
+                            SupportAbilityValue = (int)p.support_ability_value,
+                            SecondsDead = (int)p.seconds_dead,
+                            BountyRunes = (int)p.bounty_runes,
+                            OutpostsCaptured = (int)p.outposts_captured,
+                            LeaverStatus = (int)p.leaver_status,
+                            PartyId = (long)p.party_id,
+                            FeedingDetected = p.feeding_detected,
+                            SearchRank = (int)p.search_rank,
+                            SearchRankUncertainty = (int)p.search_rank_uncertainty,
+                            PreviousRank = (int)p.previous_rank,
+                            RankChange = p.rank_change,
+                            MmrType = (int)p.mmr_type,
+                        });
+                    }
+
+                }
+
+                await db.SaveChangesAsync();
+                Log($"Match {match.match_id}: outcome={existing.Outcome}, {match.players.Count} players");
             }
             catch (Exception ex)
             {
