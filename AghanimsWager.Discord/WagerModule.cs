@@ -19,8 +19,10 @@ public class WagerModule : InteractionModuleBase<SocketInteractionContext>
 
     [SlashCommand("bet", "Place a bet on an active match")]
     public async Task Bet(
-        [Summary(description: "ID of the match to bet on")] long match_id,
-        [Summary(description: "radiant or dire")] string side,
+        [Summary(description: "ID of the match to bet on")]
+        [Autocomplete(typeof(ActiveMatchAutocompleteHandler))] long match_id,
+        [Summary(description: "Which team to bet on")]
+        [Choice("Radiant", "radiant")] [Choice("Dire", "dire")] string side,
         [Summary(description: "Amount of golden salt to wager")] long amount)
     {
         await using var db = _bot.CreateDbContext();

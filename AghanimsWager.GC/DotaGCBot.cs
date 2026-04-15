@@ -675,6 +675,16 @@ public class DotaGCBot
 
                 }
 
+                // Remove LiveMatch/LivePlayer rows now that the outcome is known — lets Discord bot
+                // resolve the match immediately instead of waiting for the 2-minute staleness sweep.
+                var liveMatch = await db.LiveMatches.FirstOrDefaultAsync(m => m.MatchId == (long)match.match_id);
+                if (liveMatch != null)
+                {
+                    var livePlayers = await db.LivePlayers.Where(p => p.MatchId == liveMatch.MatchId).ToListAsync();
+                    db.LivePlayers.RemoveRange(livePlayers);
+                    db.LiveMatches.Remove(liveMatch);
+                }
+
                 await db.SaveChangesAsync();
                 Log($"Match {match.match_id}: outcome={existing.Outcome}, {match.players.Count} players");
             }

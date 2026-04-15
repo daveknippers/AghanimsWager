@@ -662,6 +662,9 @@ public class WagerBot
     public TrackedLobby? GetTrackedLobbyByMatchId(long matchId) =>
         _trackedLobbies.Values.FirstOrDefault(t => t.MatchId == matchId);
 
+    public IEnumerable<TrackedLobby> GetBettableLobbies() =>
+        _trackedLobbies.Values.Where(t => t.BettingOpen);
+
     public bool IsOnTipCooldown(long discordId, out int remainingMinutes)
     {
         remainingMinutes = 0;
