@@ -26,9 +26,11 @@ public class DotaGCBot
     readonly SteamGameCoordinator _gc;
 
     bool _isRunning;
+    bool _loggedIn;
     bool _gcReady;
     bool _pollPending;
     DateTimeOffset _gcReadyTime;
+    DateTimeOffset _lastHelloTime;
 
     // Active lobbies we're tracking (from friend rich presence)
     readonly ConcurrentDictionary<ulong, ulong?> _friendGameIds = new();
@@ -73,6 +75,10 @@ public class DotaGCBot
         {
             _callbackManager.RunWaitCallbacks(TimeSpan.FromSeconds(1));
 
+            // Retry GC Hello every 5s until Welcome arrives (Valve's GC sometimes ignores the first Hello)
+            if (_loggedIn && !_gcReady && (DateTimeOffset.UtcNow - _lastHelloTime).TotalSeconds >= 5)
+                SendGCHello();
+
             if (_gcReady)
             {
                 await ProcessPendingFriendRequests();
@@ -85,6 +91,21 @@ public class DotaGCBot
                     await PollLobbiesAsync();
                     lastPollTime = DateTimeOffset.UtcNow;
                 }
+            }
+        }
+
+        // Graceful shutdown: tell Steam we've left Dota so friends see us go offline from the game cleanly
+        if (_steamClient.IsConnected && _loggedIn)
+        {
+            try
+            {
+                var stopGame = new ClientMsgProtobuf<CMsgClientGamesPlayed>(EMsg.ClientGamesPlayed);
+                _steamClient.Send(stopGame);
+                Log("Sent empty ClientGamesPlayed (leaving Dota)");
+            }
+            catch (Exception ex)
+            {
+                Log($"Shutdown: failed to send empty ClientGamesPlayed: {ex.Message}");
             }
         }
     }
@@ -102,6 +123,7 @@ public class DotaGCBot
     void OnDisconnected(SteamClient.DisconnectedCallback cb)
     {
         Log("Disconnected. Reconnecting in 5 seconds...");
+        _loggedIn = false;
         _gcReady = false;
 
 
@@ -132,19 +154,18 @@ public class DotaGCBot
         playGame.Body.games_played.Add(new CMsgClientGamesPlayed.GamePlayed { game_id = DotaAppId });
         _steamClient.Send(playGame);
 
-        // Send GC hello after a short delay
-        Task.Run(async () =>
-        {
-            await Task.Delay(2000);
-            SendGCHello();
-        });
+        // First Hello after 2s gives Steam time to register ClientGamesPlayed; main loop retries every 5s until Welcome
+        _lastHelloTime = DateTimeOffset.UtcNow.AddSeconds(2 - 5);
+        _loggedIn = true;
     }
 
     void SendGCHello()
     {
         var hello = new ClientGCMsgProtobuf<GCHello>((uint)EGCBaseClientMsg.k_EMsgGCClientHello);
         hello.Body.engine = ESourceEngine.k_ESE_Source2;
+        hello.Body.client_session_need = 104; // magic number the real Dota client sends
         _gc.Send(hello, DotaAppId);
+        _lastHelloTime = DateTimeOffset.UtcNow;
         Log("Sent GC Hello");
     }
 
@@ -160,6 +181,24 @@ public class DotaGCBot
             _gcReadyTime = DateTimeOffset.UtcNow;
             SyncFriends();
             ResolveUnresolvedMatches();
+            return;
+        }
+
+        // GC tells us the session status — session-loss here means silent GC drop (Steam socket still up)
+        if (msgType == (uint)EGCBaseClientMsg.k_EMsgGCClientConnectionStatus)
+        {
+            var status = new ClientGCMsgProtobuf<CMsgConnectionStatus>(cb.Message);
+            if (status.Body.status == GCConnectionStatus.GCConnectionStatus_HAVE_SESSION)
+            {
+                if (!_gcReady) Log($"GC session confirmed via ConnectionStatus");
+                _gcReady = true;
+            }
+            else
+            {
+                if (_gcReady) Log($"GC session lost: {status.Body.status} — restarting Hello loop");
+                _gcReady = false;
+                _lastHelloTime = DateTimeOffset.MinValue; // fire Hello on next loop tick
+            }
             return;
         }
 
