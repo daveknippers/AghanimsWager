@@ -60,7 +60,6 @@ public class DotaGCBot
         _callbackManager.Subscribe<SteamClient.DisconnectedCallback>(OnDisconnected);
         _callbackManager.Subscribe<SteamUser.LoggedOnCallback>(OnLoggedOn);
         _callbackManager.Subscribe<SteamGameCoordinator.MessageCallback>(OnGCMessage);
-        _callbackManager.Subscribe<SteamFriends.PersonaStateCallback>(OnPersonaState);
     }
 
     public async Task RunAsync(CancellationToken ct)
@@ -221,35 +220,6 @@ public class DotaGCBot
         }
     }
 
-    void OnPersonaState(SteamFriends.PersonaStateCallback cb)
-    {
-        var steamId = cb.FriendID.ConvertToUInt64();
-
-        var friendName = _steamFriends.GetFriendPersonaName(cb.FriendID);
-
-        // StatusFlags is a bitmask of which fields the server actually updated in this delta.
-        // If the Presence bit (16) isn't set, gameid wasn't meaningfully updated in this
-        // callback — ignore it rather than treat the defaulted 0 as "left Dota."
-        const uint presenceFlag = 16;
-        var hasGameUpdate = ((uint)cb.StatusFlags & presenceFlag) != 0;
-
-        if (hasGameUpdate && cb.GameID.AppID != DotaAppId)
-        {
-            if (_friendGameIds.TryGetValue(steamId, out var prev) && prev.HasValue)
-                Log($"{friendName} left Dota 2");
-            _friendGameIds[steamId] = null;
-            _ = UpdateActiveLobbies();
-            return;
-        }
-
-        if (hasGameUpdate && cb.GameID.AppID == DotaAppId)
-        {
-            if (!_friendGameIds.ContainsKey(steamId))
-                Log($"{friendName} launched Dota 2");
-            _friendGameIds.TryAdd(steamId, null);
-        }
-    }
-
     /// <summary>
     /// Custom handler that intercepts raw ClientPersonaState messages to extract rich presence
     /// data (WatchableGameID, status, param0) which isn't exposed by SteamKit2's high-level API.
@@ -279,8 +249,23 @@ public class DotaGCBot
 
                 if (hasGameId && friend.gameid != DotaAppId)
                 {
-                    _bot._friendGameIds[steamId] = null;
+                    if (_bot._friendGameIds.ContainsKey(steamId))
+                    {
+                        var name = _bot._steamFriends.GetFriendPersonaName(new SteamID(steamId));
+                        Log($"{name} left Dota 2");
+                    }
+                    _bot._friendGameIds.TryRemove(steamId, out _);
                     continue;
+                }
+
+                if (hasGameId && friend.gameid == DotaAppId)
+                {
+                    if (!_bot._friendGameIds.ContainsKey(steamId))
+                    {
+                        var name = _bot._steamFriends.GetFriendPersonaName(new SteamID(steamId));
+                        Log($"{name} launched Dota 2");
+                        _bot._friendGameIds.TryAdd(steamId, null);
+                    }
                 }
 
                 if (!hasRichPresence)
