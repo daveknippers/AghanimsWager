@@ -176,6 +176,7 @@ public class DotaGCBot
         // Welcome = GC is ready
         if (msgType == (uint)EGCBaseClientMsg.k_EMsgGCClientWelcome)
         {
+            if (_gcReady) return; // duplicate Welcome (Valve sometimes sends multiple)
             Log("GC connection established");
             _gcReady = true;
             _gcReadyTime = DateTimeOffset.UtcNow;
@@ -195,9 +196,15 @@ public class DotaGCBot
             }
             else
             {
-                if (_gcReady) Log($"GC session lost: {status.Body.status} — restarting Hello loop");
-                _gcReady = false;
-                _lastHelloTime = DateTimeOffset.MinValue; // fire Hello on next loop tick
+                // Only act on the ready → not-ready transition; GC re-sends NO_SESSION status
+                // messages repeatedly while reconnecting, and resetting _lastHelloTime on each
+                // one would spam Hellos at whatever rate the callbacks arrive.
+                if (_gcReady)
+                {
+                    Log($"GC session lost: {status.Body.status} — restarting Hello loop");
+                    _gcReady = false;
+                    _lastHelloTime = DateTimeOffset.MinValue;
+                }
             }
             return;
         }
