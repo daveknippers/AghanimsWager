@@ -35,6 +35,7 @@ public class DotaGCBot
     // Active lobbies we're tracking (from friend rich presence)
     readonly ConcurrentDictionary<ulong, ulong?> _friendGameIds = new();
     HashSet<ulong> _activeLobbies = [];
+    readonly SemaphoreSlim _updateLobbiesLock = new(1, 1);
 
     // Track which matches have had players recorded
     readonly ConcurrentDictionary<long, bool> _matchPlayersRecorded = new();
@@ -279,11 +280,10 @@ public class DotaGCBot
                     continue;
                 }
 
+                // Rich presence is sent as a delta — an update with an empty list means "no change"
+                // for this friend, not "they left." Leave existing state alone.
                 if (friend.rich_presence.Count == 0)
-                {
-                    _bot._friendGameIds[steamId] = null;
                     continue;
-                }
 
                 string? status = null;
                 string? param0 = null;
@@ -359,45 +359,60 @@ public class DotaGCBot
 
     async Task UpdateActiveLobbies()
     {
-        var newLobbies = _friendGameIds.Values
-            .Where(v => v.HasValue)
-            .Select(v => v!.Value)
-            .ToHashSet();
-
-        var added = newLobbies.Except(_activeLobbies).ToList();
-        var removed = _activeLobbies.Except(newLobbies).ToList();
-
-        foreach (var lobby in added)
-            Log($"Tracking lobby {lobby}");
-
-        if (removed.Count > 0)
+        await _updateLobbiesLock.WaitAsync();
+        try
         {
-            try
+            var newLobbies = _friendGameIds.Values
+                .Where(v => v.HasValue)
+                .Select(v => v!.Value)
+                .ToHashSet();
+
+            var added = newLobbies.Except(_activeLobbies).ToList();
+            var removed = _activeLobbies.Except(newLobbies).ToList();
+
+            foreach (var lobby in added)
+                Log($"Tracking lobby {lobby}");
+
+            if (removed.Count > 0)
             {
-                await using var db = new WagerContext(_dbOptions);
-                foreach (var lobby in removed)
+                try
                 {
-                    Log($"Stopped tracking lobby {lobby}");
-                    var liveMatch = await db.LiveMatches
-                        .FirstOrDefaultAsync(m => m.LobbyId == (long)lobby);
-                    if (liveMatch != null)
+                    await using var db = new WagerContext(_dbOptions);
+                    foreach (var lobby in removed)
                     {
-                        var match = await db.Matches.FindAsync(liveMatch.MatchId);
-                        if (match == null || match.Outcome == MatchOutcome.Unresolved)
+                        Log($"Stopped tracking lobby {lobby}");
+                        var liveMatch = await db.LiveMatches
+                            .FirstOrDefaultAsync(m => m.LobbyId == (long)lobby);
+                        if (liveMatch != null)
                         {
-                            Log($"Lobby {lobby} gone — requesting details for match {liveMatch.MatchId}");
-                            RequestMatchDetails(liveMatch.MatchId);
+                            var match = await db.Matches.FindAsync(liveMatch.MatchId);
+                            if (match == null || match.Outcome == MatchOutcome.Unresolved)
+                            {
+                                if (_gcReady)
+                                {
+                                    Log($"Lobby {lobby} gone — requesting details for match {liveMatch.MatchId}");
+                                    RequestMatchDetails(liveMatch.MatchId);
+                                }
+                                else
+                                {
+                                    Log($"Lobby {lobby} gone but GC not ready — ResolveUnresolvedMatches will retry after Welcome");
+                                }
+                            }
                         }
                     }
                 }
+                catch (Exception ex)
+                {
+                    Log($"Error resolving removed lobbies: {ex.Message}");
+                }
             }
-            catch (Exception ex)
-            {
-                Log($"Error resolving removed lobbies: {ex.Message}");
-            }
-        }
 
-        _activeLobbies = newLobbies;
+            _activeLobbies = newLobbies;
+        }
+        finally
+        {
+            _updateLobbiesLock.Release();
+        }
     }
 
     async Task ProcessPendingFriendRequests()
