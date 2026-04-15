@@ -112,8 +112,15 @@ public class WagerBot
 
         _ = Task.Run(async () =>
         {
-            await ResumeUnfinishedMatches();
-            await LobbyPollLoop();
+            try
+            {
+                await ResumeUnfinishedMatches();
+                await LobbyPollLoop();
+            }
+            catch (Exception ex)
+            {
+                Log($"Lobby poll loop crashed: {ex}");
+            }
         });
     }
 
@@ -186,6 +193,7 @@ public class WagerBot
         await using var db = new WagerContext(_dbOptions);
 
         var liveMatches = await db.LiveMatches
+            .AsNoTracking()
             .Include(m => m.Players)
             .ToListAsync();
 
@@ -294,6 +302,14 @@ public class WagerBot
         var sortedPlayers = match.Players.OrderBy(p => p.PlayerNum).ToList();
         bool pickPhase = sortedPlayers.Any(p => p.HeroId == 0);
 
+        var playerAccountIds = sortedPlayers.Select(p => p.AccountId).ToList();
+        var discordNames = await db.DiscordMappings
+            .AsNoTracking()
+            .Where(d => playerAccountIds.Contains(d.AccountId))
+            .ToDictionaryAsync(d => d.AccountId, d => d.DiscordName ?? "");
+
+        string NameFor(long accountId) => discordNames.GetValueOrDefault(accountId, "");
+
         var longestName = _heroNames.Values.DefaultIfEmpty("").Max(n => n.Length);
         var lines = new List<string> { $"Match ID: {match.MatchId}\n" };
 
@@ -303,8 +319,7 @@ public class WagerBot
         {
             var p = sortedPlayers[i];
             var hero = HeroName(p.HeroId);
-            var discord = await GetDiscordName(db, p.AccountId);
-            lines.Add($"--  {hero.PadRight(longestName)} | {discord}");
+            lines.Add($"--  {hero.PadRight(longestName)} | {NameFor(p.AccountId)}");
         }
         lines.Add("---------------------------");
 
@@ -314,8 +329,7 @@ public class WagerBot
         {
             var p = sortedPlayers[i];
             var hero = HeroName(p.HeroId);
-            var discord = await GetDiscordName(db, p.AccountId);
-            lines.Add($"--  {hero.PadRight(longestName)} | {discord}");
+            lines.Add($"--  {hero.PadRight(longestName)} | {NameFor(p.AccountId)}");
         }
         lines.Add("---------------------------");
 
@@ -376,7 +390,7 @@ public class WagerBot
 
             foreach (var p in playersWithNames)
             {
-                var discord = await GetDiscordName(db, p.AccountId);
+                var discord = NameFor(p.AccountId);
                 if (string.IsNullOrEmpty(discord)) continue;
                 var sideStr = p.PlayerNum < 5 ? "Radiant" : "Dire";
                 if (pickPhase)
@@ -475,6 +489,11 @@ public class WagerBot
 
         if (wagers.Count == 0) return;
 
+        var gamblerIds = wagers.Select(w => w.GamblerId).Distinct().ToList();
+        var accounts = await db.GamblerAccounts
+            .Where(a => gamblerIds.Contains(a.DiscordId))
+            .ToDictionaryAsync(a => a.DiscordId);
+
         var outcome = match.Outcome;
         var winners = new List<string>();
         var losers = new List<string>();
@@ -498,8 +517,8 @@ public class WagerBot
             // Refund non-autobet wagers
             foreach (var w in wagers.Where(w => !w.IsAutobet))
             {
-                var account = await db.GamblerAccounts.FindAsync(w.GamblerId);
-                if (account != null) account.Tokens += w.Amount;
+                if (accounts.TryGetValue(w.GamblerId, out var account))
+                    account.Tokens += w.Amount;
                 w.Finalized = true;
 
                 var name = await GetName(w.GamblerId);
@@ -530,8 +549,7 @@ public class WagerBot
 
             if (w.Side == outcome)
             {
-                var account = await db.GamblerAccounts.FindAsync(w.GamblerId);
-                if (account == null) continue;
+                if (!accounts.TryGetValue(w.GamblerId, out var account)) continue;
 
                 if (w.IsAutobet)
                 {
@@ -571,12 +589,8 @@ public class WagerBot
                 losers.Add($" LOSER: {w.Amount,12} | {name}");
 
                 // Reset streak (manual bets only)
-                if (!w.IsAutobet)
-                {
-                    var account = await db.GamblerAccounts.FindAsync(w.GamblerId);
-                    if (account != null)
-                        account.CurrentStreak = 0;
-                }
+                if (!w.IsAutobet && accounts.TryGetValue(w.GamblerId, out var account))
+                    account.CurrentStreak = 0;
             }
         }
 
@@ -585,8 +599,7 @@ public class WagerBot
         {
             foreach (var w in wagers.Where(w => w.IsAutobet && w.Side == outcome))
             {
-                var account = await db.GamblerAccounts.FindAsync(w.GamblerId);
-                if (account == null) continue;
+                if (!accounts.TryGetValue(w.GamblerId, out var account)) continue;
                 var charityBonus = (long)(totalLosses * 0.2);
                 if (charityBonus > 0)
                 {

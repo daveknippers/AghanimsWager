@@ -249,23 +249,19 @@ public class DotaGCBot
 
                 if (hasGameId && friend.gameid != DotaAppId)
                 {
-                    if (_bot._friendGameIds.ContainsKey(steamId))
+                    if (_bot._friendGameIds.TryRemove(steamId, out _))
                     {
                         var name = _bot._steamFriends.GetFriendPersonaName(new SteamID(steamId));
                         Log($"{name} left Dota 2");
                     }
-                    _bot._friendGameIds.TryRemove(steamId, out _);
                     continue;
                 }
 
-                if (hasGameId && friend.gameid == DotaAppId)
+                if (hasGameId && friend.gameid == DotaAppId
+                    && _bot._friendGameIds.TryAdd(steamId, null))
                 {
-                    if (!_bot._friendGameIds.ContainsKey(steamId))
-                    {
-                        var name = _bot._steamFriends.GetFriendPersonaName(new SteamID(steamId));
-                        Log($"{name} launched Dota 2");
-                        _bot._friendGameIds.TryAdd(steamId, null);
-                    }
+                    var name = _bot._steamFriends.GetFriendPersonaName(new SteamID(steamId));
+                    Log($"{name} launched Dota 2");
                 }
 
                 if (!hasRichPresence)

@@ -157,32 +157,35 @@ public class WagerModule : InteractionModuleBase<SocketInteractionContext>
         var maxGames = Math.Clamp(last_n_matches, 1, 100);
         await using var db = _bot.CreateDbContext();
 
-        // Get all linked players
-        var mappings = await db.DiscordMappings.ToListAsync();
+        var mappings = await db.DiscordMappings.AsNoTracking().ToListAsync();
         if (mappings.Count == 0)
         {
             await RespondAsync("```No players yet```");
             return;
         }
 
-        var entries = new List<(string Name, double AvgDeaths, int Games)>();
+        var accountIds = mappings.Select(m => m.AccountId).ToList();
+        var allDeaths = await db.MatchPlayers
+            .AsNoTracking()
+            .Where(p => accountIds.Contains(p.AccountId))
+            .Join(db.Matches.Where(m => m.Outcome != MatchOutcome.Unresolved && m.Outcome != MatchOutcome.Error),
+                p => p.MatchId, m => m.MatchId, (p, m) => new { p.AccountId, p.Deaths, m.MatchId })
+            .ToListAsync();
 
+        var deathsByAccount = allDeaths
+            .GroupBy(x => x.AccountId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.MatchId).Take(maxGames).ToList());
+
+        var entries = new List<(string Name, double AvgDeaths, int Games)>();
         foreach (var mapping in mappings)
         {
-            var recentDeaths = await db.MatchPlayers
-                .Where(p => p.AccountId == mapping.AccountId)
-                .Join(db.Matches.Where(m => m.Outcome != MatchOutcome.Unresolved && m.Outcome != MatchOutcome.Error),
-                    p => p.MatchId, m => m.MatchId, (p, m) => new { p.Deaths, m.MatchId })
-                .OrderByDescending(x => x.MatchId)
-                .Take(maxGames)
-                .ToListAsync();
+            if (!deathsByAccount.TryGetValue(mapping.AccountId, out var recent) || recent.Count == 0)
+                continue;
 
-            if (recentDeaths.Count == 0) continue;
-
-            var avg = recentDeaths.Average(x => x.Deaths);
-            var user = await Context.Client.GetUserAsync((ulong)mapping.DiscordId);
-            var name = user?.GlobalName ?? user?.Username ?? mapping.DiscordName ?? mapping.DiscordId.ToString();
-            entries.Add((name, avg, recentDeaths.Count));
+            var avg = recent.Average(x => x.Deaths);
+            var guildUser = Context.Guild?.GetUser((ulong)mapping.DiscordId);
+            var name = guildUser?.GlobalName ?? guildUser?.Username ?? mapping.DiscordName ?? mapping.DiscordId.ToString();
+            entries.Add((name, avg, recent.Count));
         }
 
         if (entries.Count == 0)
