@@ -227,17 +227,14 @@ public class DotaGCBot
 
         var friendName = _steamFriends.GetFriendPersonaName(cb.FriendID);
 
-        // Not playing Dota 2 — clear tracking
-        // Ignore transient "left" events during startup (persona state flaps on connect)
-        if (cb.GameID.AppID != DotaAppId)
-        {
-            var sinceReady = (DateTimeOffset.UtcNow - _gcReadyTime).TotalSeconds;
-            if (sinceReady < 30 && _friendGameIds.TryGetValue(steamId, out var cur) && cur.HasValue)
-            {
-                Log($"{friendName} transient leave ignored (startup)");
-                return;
-            }
+        // StatusFlags is a bitmask of which fields the server actually updated in this delta.
+        // If the Presence bit (16) isn't set, gameid wasn't meaningfully updated in this
+        // callback — ignore it rather than treat the defaulted 0 as "left Dota."
+        const uint presenceFlag = 16;
+        var hasGameUpdate = ((uint)cb.StatusFlags & presenceFlag) != 0;
 
+        if (hasGameUpdate && cb.GameID.AppID != DotaAppId)
+        {
             if (_friendGameIds.TryGetValue(steamId, out var prev) && prev.HasValue)
                 Log($"{friendName} left Dota 2");
             _friendGameIds[steamId] = null;
@@ -245,12 +242,12 @@ public class DotaGCBot
             return;
         }
 
-        // Log when a friend launches Dota (only if not already tracked)
-        if (!_friendGameIds.ContainsKey(steamId))
-            Log($"{friendName} launched Dota 2");
-
-        // Ensure they're in the dictionary even if not in a match
-        _friendGameIds.TryAdd(steamId, null);
+        if (hasGameUpdate && cb.GameID.AppID == DotaAppId)
+        {
+            if (!_friendGameIds.ContainsKey(steamId))
+                Log($"{friendName} launched Dota 2");
+            _friendGameIds.TryAdd(steamId, null);
+        }
     }
 
     /// <summary>
@@ -274,15 +271,19 @@ public class DotaGCBot
             {
                 var steamId = friend.friendid;
 
-                if (friend.gameid != DotaAppId)
+                // Persona state comes in as a delta — any individual field not populated in this
+                // update means "no change" for that field, not "cleared." Only act on fields that
+                // are actually present per ShouldSerialize*.
+                var hasGameId = friend.ShouldSerializegameid();
+                var hasRichPresence = friend.rich_presence.Count > 0;
+
+                if (hasGameId && friend.gameid != DotaAppId)
                 {
                     _bot._friendGameIds[steamId] = null;
                     continue;
                 }
 
-                // Rich presence is sent as a delta — an update with an empty list means "no change"
-                // for this friend, not "they left." Leave existing state alone.
-                if (friend.rich_presence.Count == 0)
+                if (!hasRichPresence)
                     continue;
 
                 string? status = null;
